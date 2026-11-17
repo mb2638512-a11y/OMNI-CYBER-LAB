@@ -223,6 +223,13 @@ private fun inspectApkArchive(path: String?): List<String> {
 
 
 
+private fun startShizukuProcess(command: Array<String>): Process {
+    // Shizuku API 13 keeps newProcess private; migrate this compatibility bridge to UserService before API 14.
+    val method = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+        .apply { isAccessible = true }
+    return method.invoke(null, command, null, null) as Process
+}
+
 private suspend fun inspectPackageWithShizuku(packageName: String): List<String> = withContext(Dispatchers.IO) {
     if (!packageName.matches(Regex("[A-Za-z0-9_.]+"))) return@withContext listOf("Invalid package identifier.")
     try {
@@ -230,7 +237,7 @@ private suspend fun inspectPackageWithShizuku(packageName: String): List<String>
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
             return@withContext listOf("Shizuku permission has not been granted to OMNI CYBER LAB.")
         }
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys package $packageName"), null, null)
+        val process = startShizukuProcess(arrayOf("sh", "-c", "dumpsys package $packageName"), null, null)
         try {
             val lines = process.inputStream.bufferedReader().use { reader ->
                 generateSequence { reader.readLine() }.take(100).toList()
@@ -250,13 +257,13 @@ private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<Str
     try {
         if (!Shizuku.pingBinder()) return@withContext listOf("Shizuku service is not running.")
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return@withContext listOf("Shizuku permission is required.")
-        val pidProcess = Shizuku.newProcess(arrayOf("sh", "-c", "pidof $packageName"), null, null)
+        val pidProcess = startShizukuProcess(arrayOf("sh", "-c", "pidof $packageName"), null, null)
         val pid = try { pidProcess.inputStream.bufferedReader().readText().trim().split(Regex("\\s+")).firstOrNull { it.matches(Regex("[0-9]+")) } } finally { pidProcess.destroy() }
         if (pid.isNullOrBlank()) return@withContext listOf("Target process is not running. Launch the app, reproduce the flow, then capture logs.")
-        val logProcess = Shizuku.newProcess(arrayOf("logcat", "-d", "--pid=$pid", "-t", "250"), null, null)
+        val logProcess = startShizukuProcess(arrayOf("logcat", "-d", "--pid=$pid", "-t", "250"), null, null)
         val rawLines = try { logProcess.inputStream.bufferedReader().use { reader -> generateSequence { reader.readLine() }.take(250).toList() } } finally { logProcess.destroy() }
-        val secretPattern = Regex("""(?i)(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret)(\\s*[:=]\\s*)[^\\s,;]+""")
-        val emailPattern = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}""")
+        val secretPattern = Regex("""(?i)(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret)(\s*[:=]\s*)[^\s,;]+""")
+        val emailPattern = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
         val redacted = rawLines.map { line ->
             secretPattern.replace(line) { m -> m.groupValues[1] + m.groupValues[2] + "[REDACTED]" }
                 .let { emailPattern.replace(it, "[EMAIL]") }
@@ -1208,7 +1215,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     installScope.launch {
                                         logCaptureRunning = true
                                         runtimeLogReport = "Capturing recent process logs…"
-                                        runtimeLogReport = captureRuntimeLogsWithShizuku(app.pkg).joinToString("\\n")
+                                        runtimeLogReport = captureRuntimeLogsWithShizuku(app.pkg).joinToString("\n")
                                         logCaptureRunning = false
                                     }
                                 }, enabled = installed && shizukuReady && !logCaptureRunning, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
