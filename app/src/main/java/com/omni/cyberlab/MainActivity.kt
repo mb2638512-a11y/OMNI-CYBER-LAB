@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import java.io.File
+import java.util.zip.ZipFile
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -61,7 +62,7 @@ data class AppRow(
     val name: String, val pkg: String, val version: String, val icon: Bitmap?,
     val permissions: List<String>, val exported: Int, val debug: Boolean,
     val signer: String, val system: Boolean, val targetSdk: Int,
-    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList()
+    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList(), val archiveInventory: List<String> = emptyList()
 ) {
     val status: String get() = when {
         debug -> "HIGH RISK"
@@ -70,7 +71,36 @@ data class AppRow(
     }
 }
 
-class MainActivity : ComponentActivity() {
+
+private fun inspectApkArchive(path: String?): List<String> {
+    if (path.isNullOrBlank()) return listOf("Archive path unavailable")
+    return try {
+        ZipFile(path).use { zip ->
+            val entries = zip.entries().asSequence().toList()
+            val dex = entries.filter { it.name.matches(Regex("classes(\\\\d*)\\\\.dex")) }.map { it.name }.sorted()
+            val native = entries.filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }.map { it.name }.sorted()
+            val networkConfig = entries.filter { it.name.contains("network_security_config", ignoreCase = true) }.map { it.name }
+            val multidex = dex.size > 1
+            buildList {
+                add("APK entries: ${entries.size}")
+                add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
+                dex.take(20).forEach { add("DEX • $it") }
+                add("Native libraries: ${native.size}")
+                native.take(30).forEach { add("NATIVE • $it") }
+                if (networkConfig.isEmpty()) add("Network security config: not found by filename")
+                else networkConfig.forEach { add("NETWORK CONFIG • $it") }
+                if (entries.any { it.name == "assets/" } || entries.any { it.name.startsWith("assets/") }) {
+                    add("Assets directory: present")
+                }
+                if (entries.any { it.name.startsWith("META-INF/") }) add("META-INF metadata: present")
+                if (dex.isEmpty()) add("No standard classes*.dex entry detected")
+            }
+        }
+    } catch (e: Exception) {
+        listOf("Archive inspection failed: ${e.javaClass.simpleName}")
+    }
+}
+\nclass MainActivity : ComponentActivity() {
     private fun iconBitmap(drawable: Drawable): Bitmap? = try {
         val w = drawable.intrinsicWidth.coerceAtLeast(1).coerceAtMost(160)
         val h = drawable.intrinsicHeight.coerceAtLeast(1).coerceAtMost(160)
@@ -125,7 +155,7 @@ class MainActivity : ComponentActivity() {
                     p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
                     perms, exported, debug, signer,
                     ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails)
+                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir))
             } catch (_: Exception) { null }
         }.sortedBy { it.name.lowercase() }
     }
@@ -207,7 +237,7 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) { null }
                                     AppRow(pm.getApplicationLabel(ai).toString(), info.packageName,
                                         info.versionName ?: "Unknown", icon, perms, exported, debug,
-                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails)
+                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails, inspectApkArchive(file.absolutePath))
                                 }
                                 selected = imported
                                 importMessage = "APK metadata loaded. Runtime behavior is not tested."
@@ -555,7 +585,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine("Installer: " + app.installer)
             appendLine("Debuggable: " + app.debug)
             appendLine("Exported components: " + app.exported)
-            appendLine("Exported component inventory:")
+            appendLine("APK archive inventory:")\n            app.archiveInventory.forEach { appendLine("- " + it) }\n            appendLine("Exported component inventory:")
             if (app.exportedComponents.isEmpty()) appendLine("- None reported by package metadata")
             else app.exportedComponents.forEach { appendLine("- " + it) }
             appendLine("Manifest review signals:")
@@ -586,7 +616,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
-                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
+                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),\n                WorkspaceFeature("DEX & native libraries", "Inventory DEX bytecode files, native .so libraries and network config filenames. No decompilation or malware verdict.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE INVENTORY", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
@@ -691,7 +721,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                            if (current.title == "Debug & exported components") {
+                            if (current.title == "DEX & native libraries") {\n                                Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))\n                                app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }\n                                Text("This is filename/ZIP-entry inventory only. DEX instructions, embedded secrets, library vulnerabilities and runtime behavior are not analyzed yet.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))\n                            } else if (current.title == "Debug & exported components") {
                                 Text("${app.exportedComponents.size} exported components found", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 if (app.exportedComponents.isEmpty()) Text("No exported components were reported by package metadata.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                                 else app.exportedComponents.forEach { component -> Text("• $component", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp)) }
