@@ -84,11 +84,35 @@ private fun inspectApkArchive(path: String?): List<String> {
             val networkConfig = entries.filter { it.name.contains("network_security_config", ignoreCase = true) }.map { it.name }
             val reviewFiles = entries.filter { entry -> listOf(".json", ".properties", ".xml", ".pem", ".cer", ".crt", ".db", ".sqlite").any { entry.name.endsWith(it, ignoreCase = true) } }
             val totalUncompressed = entries.sumOf { it.size.coerceAtLeast(0L) }
+            val textCandidates = entries.filter { entry ->
+                !entry.isDirectory && entry.size in 1..131072 &&
+                    listOf(".json", ".properties", ".xml", ".txt", ".js", ".html", ".yaml", ".yml", ".gradle", ".kt").any { entry.name.endsWith(it, ignoreCase = true) }
+            }.take(80)
+            var scannedBytes = 0L
+            val secretSignals = mutableListOf<String>()
+            val assignmentPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password|secret)\\s*[:=]\\s*["']?([A-Za-z0-9_./+=-]{12,})""")
+            val awsPattern = Regex("""\\bAKIA[0-9A-Z]{16}\\b""")
+            textCandidates.forEach { entry ->
+                if (scannedBytes >= 2L * 1024L * 1024L) return@forEach
+                try {
+                    val remaining = (2L * 1024L * 1024L - scannedBytes).coerceAtMost(131072L).toInt()
+                    val bytes = zip.getInputStream(entry).use { it.readNBytes(remaining) }
+                    scannedBytes += bytes.size
+                    val content = bytes.toString(Charsets.UTF_8)
+                    assignmentPattern.findAll(content).take(4).forEach { match ->
+                        val keyName = match.groupValues[1]
+                        secretSignals.add("Possible embedded credential • $keyName • value redacted • ${entry.name}")
+                    }
+                    if (awsPattern.containsMatchIn(content)) {
+                        secretSignals.add("Possible AWS access-key identifier • value redacted • ${entry.name}")
+                    }
+                } catch (_: Exception) { }
+            }
             val multidex = dex.size > 1
             buildList {
                 add("APK entries: ${entries.size}")
                 add("Total uncompressed size: ${totalUncompressed / 1024} KB")
-                add("Review-relevant config/data files: ${reviewFiles.size}")
+                add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")\n                add("Possible credential signals: ${secretSignals.size}")\n                secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }\n                if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")\n                add("Review-relevant config/data files: ${reviewFiles.size}")
                 reviewFiles.take(50).forEach { entry -> add("FILE • ${entry.name} • ${entry.size.coerceAtLeast(0L) / 1024} KB") }
                 add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
                 dex.take(20).forEach { add("DEX • $it") }
