@@ -73,7 +73,7 @@ import javax.net.ssl.HttpsURLConnection
 
 private const val APK_SET_INSTALL_ACTION = "com.omni.cyberlab.ACTION_APK_SET_INSTALL_STATUS"
 
-private class ApkSetInstallReceiver : BroadcastReceiver() {
+class ApkSetInstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != APK_SET_INSTALL_ACTION) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
@@ -1162,7 +1162,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Open app" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK is not installed." else "Use Launch app to open the installed app.")
         "Open system app settings" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK has no Android settings page on this device." else "Use Open Android app settings to view system controls.")
         "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result.")
-        "Create APK backup" -> listOf("Export APK files with a SHA-256 and archive/package consistency report using Android document picker.", "Split APK applications may need a complete package set; this exports only the selected base APK.")
+        "Create APK backup" -> listOf("Export APK files with a SHA-256 and archive/package consistency report using Android document picker.", "Split APK applications are exported as a set when Android exposes their base and split paths.")
         else -> listOf("Automated test engine is not implemented for this feature yet.", "No test was run and no pass/fail result is claimed.")
     }
 }
@@ -1173,6 +1173,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     val shizukuReady = try { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: Exception) { false }
     var pendingPdfText by remember { mutableStateOf("") }
     var installMessage by remember { mutableStateOf("") }
+    var splitInstallRunning by remember { mutableStateOf(false) }
     var backupMessage by remember { mutableStateOf("") }
     var comparisonMessage by remember { mutableStateOf("") }
     var shizukuReport by remember { mutableStateOf("") }
@@ -1840,14 +1841,36 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 ) {
                                     Text(if (installed) "Reinstall / Update APK" else "Install APK")
                                 }
-                                Text("Android will ask for confirmation. Silent installation and security prompts are not bypassed. A split APK app may require its complete split package set.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                                if (app.apkPaths.size > 1) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            splitInstallRunning = true
+                                            installMessage = "Validating split APK set and creating Android install session…"
+                                            installScope.launch {
+                                                try {
+                                                    val sessionId = withContext(Dispatchers.IO) {
+                                                        installApkSetWithPackageInstaller(context, app.pkg, app.apkPaths)
+                                                    }
+                                                    installMessage = "Install session $sessionId created. Android will display its confirmation screen if required."
+                                                } catch (e: Exception) {
+                                                    installMessage = "Split APK install could not start: ${e.message ?: e.javaClass.simpleName}"
+                                                } finally {
+                                                    splitInstallRunning = false
+                                                }
+                                            }
+                                        },
+                                        enabled = !splitInstallRunning,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                    ) { Text(if (splitInstallRunning) "Preparing split set…" else "Install complete split APK set") }
+                                }
+                                Text("Single APK installs use Android Package Installer. Complete split sets use Android's PackageInstaller session and still require any system confirmation. No silent install.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
                                 if (installMessage.isNotBlank()) Text(installMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "Create APK backup") {
                                 Button(onClick = { backupLauncher.launch(app.pkg.substringAfterLast(".") + "-" + app.version + "-apk-set.zip") }, enabled = !app.apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                                     Text("Export APK set backup (.zip)")
                                 }
                                 if (backupMessage.isNotBlank()) Text(backupMessage, color = if (backupMessage.startsWith("APK backup exported")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
-                                Text("Exports available base/split APK files only. It does not back up private app data. Restore of split sets needs a compatible installer or authorized ADB/Shizuku workflow.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("Exports available base/split APK files with integrity metadata. Use Install complete split APK set in the install section to restore a compatible complete set. Private app data is not included.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "DEX & native libraries") {
                                 Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
