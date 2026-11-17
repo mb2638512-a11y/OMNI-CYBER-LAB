@@ -101,7 +101,20 @@ private fun inspectApkArchive(path: String?): List<String> {
     }
 }
 
-class MainActivity : ComponentActivity() {
+
+private fun classifyFinding(finding: String): Pair<String, String> {
+    val value = finding.lowercase()
+    return when {
+        value.contains("debuggable") -> "HIGH" to "Disable debuggable on production builds; keep debugging limited to development variants. (MASVS-RESILIENCE)"
+        value.contains("cleartext") -> "MEDIUM" to "Disable cleartext traffic and configure domain-specific trust policy. Verify with runtime traffic tests. (MASVS-NETWORK)"
+        value.contains("backup") -> "REVIEW" to "Review backup rules and exclude credentials, tokens and sensitive records where appropriate. (MASVS-STORAGE)"
+        value.contains("sensitive permissions") -> "INFO" to "Confirm each permission is necessary, request it just-in-time and minimize collected data. (MASVS-PRIVACY)"
+        value.contains("exported components") -> "REVIEW" to "Review each exported component's caller permissions, intent filters, input validation and exposed operations. (MASVS-PLATFORM)"
+        value.contains("signing fingerprint") -> "INFO" to "Confirm signing certificate availability and compare fingerprints against a trusted release record. (MASVS-CODE)"
+        else -> "REVIEW" to "Manually validate this signal and document evidence before assigning a vulnerability severity."
+    }
+}
+\nclass MainActivity : ComponentActivity() {
     private fun iconBitmap(drawable: Drawable): Bitmap? = try {
         val w = drawable.intrinsicWidth.coerceAtLeast(1).coerceAtMost(160)
         val h = drawable.intrinsicHeight.coerceAtLeast(1).coerceAtMost(160)
@@ -603,9 +616,14 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 } else "NOT AVAILABLE FOR UNINSTALLED APK"
                 appendLine("- " + permission + " [" + grant + "]")
             }
-            appendLine("Review signals:")
+            appendLine("Structured findings and suggested remediation:")
             if (app.findings.isEmpty()) appendLine("- No basic metadata flags raised")
-            else app.findings.forEach { appendLine("- " + it) }
+            else app.findings.forEach { finding ->
+                val (severity, remediation) = classifyFinding(finding)
+                appendLine("- [$severity] $finding")
+                appendLine("  Recommendation: $remediation")
+            }
+            appendLine("Framework note: MASVS labels are guidance mappings, not a formal compliance result. Severity requires validation and evidence.")
             appendLine("Static metadata only; not a malware verdict or full penetration test.")
         }
         val send = Intent(Intent.ACTION_SEND).apply {
