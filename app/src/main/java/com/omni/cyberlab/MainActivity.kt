@@ -4,6 +4,11 @@ import com.android.apksig.ApkSigner
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.app.PendingIntent
+import android.content.pm.PackageInstaller
+import android.widget.Toast
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -66,6 +71,71 @@ import java.security.MessageDigest
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
 
+private const val APK_SET_INSTALL_ACTION = "com.omni.cyberlab.ACTION_APK_SET_INSTALL_STATUS"
+
+private class ApkSetInstallReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != APK_SET_INSTALL_ACTION) return
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "No installer detail"
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                val confirmation = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) else intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
+                if (confirmation != null) {
+                    confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(confirmation)
+                } else Toast.makeText(context, "Android requested confirmation but did not provide an installer screen.", Toast.LENGTH_LONG).show()
+            }
+            PackageInstaller.STATUS_SUCCESS -> Toast.makeText(context, "APK set installed successfully. Refresh the app inventory.", Toast.LENGTH_LONG).show()
+            else -> Toast.makeText(context, "APK set install failed ($status): $message", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+private fun installApkSetWithPackageInstaller(context: Context, expectedPackage: String, sourcePaths: List<String>): Int {
+    val sources = sourcePaths.map { File(it) }.filter { it.isFile }
+    require(sources.isNotEmpty()) { "No APK files are available." }
+    val pm = context.packageManager
+    val parsed = sources.map { file ->
+        @Suppress("DEPRECATION")
+        val info = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES)
+            ?: throw IllegalArgumentException("Not a readable APK: ${file.name}")
+        require(info.packageName == expectedPackage) { "Package mismatch in ${file.name}: ${info.packageName}" }
+        val splitName = info.splitNames?.firstOrNull()
+        file to splitName
+    }
+    val baseCount = parsed.count { it.second.isNullOrBlank() }
+    require(baseCount == 1) { "A split APK set must contain exactly one base APK; found $baseCount." }
+    val splitNames = parsed.mapNotNull { it.second }
+    require(splitNames.distinct().size == splitNames.size) { "Duplicate split APK names were found." }
+    val totalBytes = sources.sumOf { it.length() }
+    require(totalBytes > 0L) { "APK set is empty." }
+    val installer = pm.packageInstaller
+    val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+        setAppPackageName(expectedPackage)
+        setSize(totalBytes)
+    }
+    val sessionId = installer.createSession(params)
+    try {
+        installer.openSession(sessionId).use { session ->
+            parsed.forEach { (file, splitName) ->
+                val entryName = if (splitName.isNullOrBlank()) "base.apk" else "split_${splitName.replace(Regex("[^A-Za-z0-9_.-]"), "_")}.apk"
+                session.openWrite(entryName, 0L, file.length()).use { output ->
+                    file.inputStream().use { input -> input.copyTo(output) }
+                    session.fsync(output)
+                }
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+            val callback = PendingIntent.getBroadcast(context, sessionId, Intent(context, ApkSetInstallReceiver::class.java).setAction(APK_SET_INSTALL_ACTION), flags)
+            session.commit(callback.intentSender)
+        }
+    } catch (e: Exception) {
+        try { installer.abandonSession(sessionId) } catch (_: Exception) { }
+        throw e
+    }
+    return sessionId
+}
 private val Bg = Color(0xFF08111F)
 private val CardBg = Color(0xFF111F32)
 private val Raised = Color(0xFF1A2B40)
