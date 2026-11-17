@@ -297,7 +297,7 @@ private fun disassembleApkToSmali(apkPath: String?, cacheDir: File): File {
     val outputZip = File(cacheDir, "smali-disassembly-" + System.currentTimeMillis() + ".zip")
     try {
         ZipFile(apk).use { zip ->
-            val dexEntries = zip.entries().asSequence().filter { it.name.matches(Regex("classes([0-9]*)\\\\.dex")) }.take(12).toList()
+            val dexEntries = zip.entries().asSequence().filter { it.name.matches(Regex("classes([0-9]*)\\\\.dex")) }.sortedBy { if (it.name == "classes.dex") 1 else it.name.removePrefix("classes").removeSuffix(".dex").toIntOrNull() ?: 1 }.take(12).toList()
             if (dexEntries.isEmpty()) throw IllegalArgumentException("No classes*.dex files found in APK")
             var totalDexBytes = 0L
             dexEntries.forEachIndexed { index, entry ->
@@ -762,7 +762,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 item {
                                     Text("ABOUT THESE RESULTS", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                    Text("Review flags need manual review; they are not proof an app is hacked. Current checks include package metadata, APK archive/text-pattern scanning, SHA-256 hashing, signer comparison and a manual one-request HTTPS/TLS check. Runtime malware behavior, full API crawling, billing sandbox validation and exploit confirmation are not implemented.",
+                                    Text("Review flags need manual review; they are not proof an app is hacked. Current checks include package metadata, APK archive and bounded DEX string triage, Smali disassembly/rebuild, APK signing with your keystore, build comparison, split APK backup bundles, Usage Access storage stats, Shizuku package/log snapshots, billing sandbox checklist and a manual HTTPS/TLS check. Automated malware verdicts, full Java source reconstruction, binary resource/manifest editing, full API crawling and payment verification remain outside this build.",
                                         color = Grey, fontSize = 11.sp)
                                 }
                             }
