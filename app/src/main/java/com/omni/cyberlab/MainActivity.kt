@@ -294,7 +294,7 @@ private fun inspectResourceTableLocales(path: String?): String {
                         var valueCount = 0
                         var complexCount = 0
                         output.append("\\nRESOURCE ID ENUMERATION\\n")
-                        resourceTable.packageMap.values.sortedBy { it.id.toInt() }.forEach { pkg ->
+                        (1..255).mapNotNull { resourceTable.getPackage(it.toShort()) }.sortedBy { it.id.toInt() }.forEach { pkg ->
                             output.append("PACKAGE • ").append(pkg.name).append(" • ID 0x").append("%02X".format(pkg.id.toInt() and 0xFF)).append("\\n")
                             pkg.typeSpecMap.values.sortedBy { it.id.toInt() }.forEach { spec ->
                                 val variants = pkg.typesMap[spec.id].orEmpty()
