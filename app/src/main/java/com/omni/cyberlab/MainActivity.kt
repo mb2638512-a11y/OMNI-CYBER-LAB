@@ -928,7 +928,7 @@ private fun subcategoryFor(category: String, feature: String): String {
     return when (category) {
         "Security audit" -> when (feature) {
             "Signer & integrity", "DEX & native libraries", "Resource & manifest inventory" -> "Code & signing"
-            "Debug & exported components", "Cleartext traffic policy", "Malware behavior" -> "Manifest & runtime exposure"
+            "Debug & exported components", "Cleartext traffic policy", "Static behavior indicators" -> "Manifest & runtime exposure"
             else -> "Security overview"
         }
         "Permissions & privacy" -> if (feature.contains("Permission")) "Permissions" else "Privacy & data access"
@@ -1004,6 +1004,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Signer & integrity" -> listOf("Signer certificate SHA-256: " + app.signer, "APK file SHA-256 is included in the archive inventory.", "Compare the signer fingerprint with a trusted release record; matching signer identity is not a malware verdict.")
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
         "Resource & manifest inventory" -> inspectResourceInventory(app.apkPath)
+        "Static behavior indicators" -> app.archiveInventory.filter { it.contains("Behavior/API marker") || it.contains("Embedded URL string") || it.contains("credential", true) }.ifEmpty { listOf("No configured behavior or credential marker found in the bounded sample. This does not prove the app is safe.") }
         "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
@@ -1292,7 +1293,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Runtime log snapshot", "Capture recent process log entries via Shizuku after launching the app; common secret fields are redacted.", if (shizukuReady) "READY • SHIZUKU" else "SHIZUKU REQUIRED", installed),
-                WorkspaceFeature("Malware behavior", "Automated malware classification and continuous behavior monitoring are not implemented.", "NOT IMPLEMENTED")
+                WorkspaceFeature("Static behavior indicators", "Review sampled DEX strings for dynamic loading, process execution, accessibility, screen capture and network indicators. This is triage, not a malware verdict.", if (app.archiveInventory.isEmpty()) "APK REQUIRED" else "STATIC TRIAGE", app.archiveInventory.isNotEmpty())
             )),
             WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
                 WorkspaceFeature("Permission inventory", "View every permission declared by this app.", "${app.permissions.size} FOUND", true),
