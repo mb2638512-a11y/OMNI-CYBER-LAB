@@ -688,6 +688,15 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val installed = app.installer != "Imported APK • not installed"
     var pendingPdfText by remember { mutableStateOf("") }
+    var installMessage by remember { mutableStateOf("") }
+    val installScope = rememberCoroutineScope()
+    val installLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        installMessage = when (result.resultCode) {
+            android.app.Activity.RESULT_OK -> "Installer reported success. Refresh the app inventory to confirm."
+            android.app.Activity.RESULT_CANCELED -> "Installer was cancelled or returned no completion result. Check the installed-app list."
+            else -> "Installer returned code " + result.resultCode + ". Check the installed-app list."
+        }
+    }
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             try {
@@ -889,7 +898,46 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Text("• $result", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
                                 }
                             }
-                            if (current.title == "DEX & native libraries") {
+                            if (current.title == "Install / reinstall APK") {
+                                Button(
+                                    onClick = {
+                                        val source = app.apkPath
+                                        if (source.isNullOrBlank()) {
+                                            installMessage = "No APK file is available for this app."
+                                        } else {
+                                            installMessage = "Preparing APK for Android Package Installer…"
+                                            installScope.launch {
+                                                try {
+                                                    val prepared = withContext(Dispatchers.IO) {
+                                                        val sourceFile = File(source)
+                                                        if (!sourceFile.exists()) throw IllegalStateException("APK source file is no longer available")
+                                                        val folder = File(context.cacheDir, "install")
+                                                        if (!folder.exists() && !folder.mkdirs()) throw IllegalStateException("Cannot create install cache")
+                                                        val safeName = app.pkg.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+                                                        val target = File(folder, safeName + ".apk")
+                                                        sourceFile.copyTo(target, overwrite = true)
+                                                        target
+                                                    }
+                                                    val uri = FileProvider.getUriForFile(context, context.packageName + ".files", prepared)
+                                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                        setDataAndType(uri, "application/vnd.android.package-archive")
+                                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                    }
+                                                    installLauncher.launch(intent)
+                                                    installMessage = "Android installer opened. Review the app name and package, then confirm on the system screen."
+                                                } catch (e: Exception) {
+                                                    installMessage = "Could not open installer: " + e.message
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                                ) {
+                                    Text(if (installed) "Reinstall / Update APK" else "Install APK")
+                                }
+                                Text("Android will ask for confirmation. Silent installation and security prompts are not bypassed. A split APK app may require its complete split package set.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                                if (installMessage.isNotBlank()) Text(installMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            } else if (current.title == "DEX & native libraries") {
                                 Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
                                 Text("This is filename/ZIP-entry inventory only. DEX instructions, embedded secrets, library vulnerabilities and runtime behavior are not analyzed yet.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
