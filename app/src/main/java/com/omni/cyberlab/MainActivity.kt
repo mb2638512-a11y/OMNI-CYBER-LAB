@@ -1241,6 +1241,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var rebuiltApkPath by remember { mutableStateOf<String?>(null) }
     var rebuildRunning by remember { mutableStateOf(false) }
     var storageResult by remember { mutableStateOf("") }
+    var manifestDecodeReport by remember { mutableStateOf("") }
+    var manifestDecodeRunning by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
             try {
@@ -1464,6 +1466,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Resource & manifest inventory", "Inventory APK resources and inspect basic raw manifest string markers without modifying the package.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • RESOURCE SCAN", !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Binary manifest & XML decode", "Decode Android binary AndroidManifest.xml and sample compiled resource XML into readable text for inspection.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • AXML DECODE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Rebuild APK from Smali", "Reassemble edited Smali source into the matching DEX entries and produce an unsigned APK for your own app.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • REBUILD", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
@@ -1843,6 +1846,24 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Text(comparisonMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 9.dp))
                                 }
                                 Text("Comparison is static metadata only. It does not run either APK or prove that one build is safe.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Binary manifest & XML decode") {
+                                Button(
+                                    onClick = {
+                                        manifestDecodeRunning = true
+                                        manifestDecodeReport = "Decoding binary Android manifest and selected resource XML…"
+                                        installScope.launch {
+                                            manifestDecodeReport = withContext(Dispatchers.IO) { decodeApkManifestAndResources(app.apkPath) }
+                                            manifestDecodeRunning = false
+                                        }
+                                    },
+                                    enabled = !manifestDecodeRunning && !app.apkPath.isNullOrBlank(),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                                ) { Text(if (manifestDecodeRunning) "Decoding…" else "Decode binary manifest + XML") }
+                                if (manifestDecodeReport.isNotBlank()) {
+                                    Text(manifestDecodeReport, color = Grey, fontSize = 9.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+                                }
+                                Text("This decodes the binary manifest and up to 12 resource XML files for review. It does not edit/rebuild resources or guarantee resolution of every resource reference.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
