@@ -77,7 +77,7 @@ private fun inspectApkArchive(path: String?): List<String> {
     return try {
         ZipFile(path).use { zip ->
             val entries = zip.entries().asSequence().toList()
-            val dex = entries.filter { it.name.matches(Regex("classes(\\\\d*)\\\\.dex")) }.map { it.name }.sorted()
+            val dex = entries.filter { it.name.matches(Regex("classes([0-9]*)\\.dex")) }.map { it.name }.sorted()
             val native = entries.filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }.map { it.name }.sorted()
             val networkConfig = entries.filter { it.name.contains("network_security_config", ignoreCase = true) }.map { it.name }
             val multidex = dex.size > 1
@@ -100,7 +100,8 @@ private fun inspectApkArchive(path: String?): List<String> {
         listOf("Archive inspection failed: ${e.javaClass.simpleName}")
     }
 }
-\nclass MainActivity : ComponentActivity() {
+
+class MainActivity : ComponentActivity() {
     private fun iconBitmap(drawable: Drawable): Bitmap? = try {
         val w = drawable.intrinsicWidth.coerceAtLeast(1).coerceAtMost(160)
         val h = drawable.intrinsicHeight.coerceAtLeast(1).coerceAtMost(160)
@@ -585,7 +586,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine("Installer: " + app.installer)
             appendLine("Debuggable: " + app.debug)
             appendLine("Exported components: " + app.exported)
-            appendLine("APK archive inventory:")\n            app.archiveInventory.forEach { appendLine("- " + it) }\n            appendLine("Exported component inventory:")
+            appendLine("APK archive inventory:")
+            app.archiveInventory.forEach { appendLine("- " + it) }
+            appendLine("Exported component inventory:")
             if (app.exportedComponents.isEmpty()) appendLine("- None reported by package metadata")
             else app.exportedComponents.forEach { appendLine("- " + it) }
             appendLine("Manifest review signals:")
@@ -616,7 +619,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
-                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),\n                WorkspaceFeature("DEX & native libraries", "Inventory DEX bytecode files, native .so libraries and network config filenames. No decompilation or malware verdict.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE INVENTORY", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
+                WorkspaceFeature("DEX & native libraries", "Inventory DEX bytecode files, native .so libraries and network config filenames. No decompilation or malware verdict.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE INVENTORY", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
@@ -721,7 +725,11 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                            if (current.title == "DEX & native libraries") {\n                                Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))\n                                app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }\n                                Text("This is filename/ZIP-entry inventory only. DEX instructions, embedded secrets, library vulnerabilities and runtime behavior are not analyzed yet.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))\n                            } else if (current.title == "Debug & exported components") {
+                            if (current.title == "DEX & native libraries") {
+                                Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
+                                Text("This is filename/ZIP-entry inventory only. DEX instructions, embedded secrets, library vulnerabilities and runtime behavior are not analyzed yet.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            } else if (current.title == "Debug & exported components") {
                                 Text("${app.exportedComponents.size} exported components found", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 if (app.exportedComponents.isEmpty()) Text("No exported components were reported by package metadata.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                                 else app.exportedComponents.forEach { component -> Text("• $component", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp)) }
