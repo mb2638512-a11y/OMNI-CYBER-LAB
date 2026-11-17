@@ -21,6 +21,11 @@ Open in Android Studio with JDK 17, sync Gradle, connect a phone and press Run. 
 
 On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. This app does not implement a standalone USB ADB host client; computer-side ADB uses Android Platform Tools separately.
 
+## Additional APK analysis
+- Bounded DEX string triage for selected behavior/API markers, URLs, credential-like strings and common SDK references.
+- Resource ZIP inventory for drawable/mipmap, layout, values, raw resources and assets.
+- Basic UTF-8/UTF-16 raw-string scan of AndroidManifest.xml; this is not full binary AXML decoding or resource resolution.
+
 ## Limitations and safe use
 Use only on devices, apps, networks and backend environments you own or are explicitly authorized to assess. Android sandboxing prevents reading other apps' private files, credentials, protected memory or hidden traffic. Exported components and permissions are review signals, not proof of vulnerabilities. No payment bypass, malware execution, Wi-Fi attack or unauthorized endpoint testing is included. Dynamic testing needs an owned app and dedicated test environment.
 
