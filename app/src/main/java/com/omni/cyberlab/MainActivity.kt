@@ -90,8 +90,8 @@ private fun inspectApkArchive(path: String?): List<String> {
             }.take(80)
             var scannedBytes = 0L
             val secretSignals = mutableListOf<String>()
-            val assignmentPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password|secret)\\s*[:=]\\s*["']?([A-Za-z0-9_./+=-]{12,})""")
-            val awsPattern = Regex("""\\bAKIA[0-9A-Z]{16}\\b""")
+            val assignmentPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password|secret)\s*[:=]\s*["']?([A-Za-z0-9_./+=-]{12,})""")
+            val awsPattern = Regex("""\bAKIA[0-9A-Z]{16}\b""")
             textCandidates.forEach { entry ->
                 if (scannedBytes >= 2L * 1024L * 1024L) return@forEach
                 try {
