@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
                 var selected by remember { mutableStateOf<AppRow?>(null) }
                 var query by remember { mutableStateOf("") }
                 var filter by remember { mutableStateOf("ALL") }
+                var riskFirst by remember { mutableStateOf(false) }
                 var scanning by remember { mutableStateOf(false) }
                 var scanTime by remember { mutableStateOf("Waiting for first inventory") }
                 var bridge by remember { mutableStateOf("Checking Shizuku…") }
@@ -158,6 +159,10 @@ class MainActivity : ComponentActivity() {
                         "SYSTEM" -> it.system
                         else -> true
                     }
+                }.let { list ->
+                    if (riskFirst) list.sortedWith(compareByDescending<AppRow> { it.debug }
+                        .thenByDescending { it.findings.size }.thenBy { it.name.lowercase() })
+                    else list.sortedBy { it.name.lowercase() }
                 }
                 Surface(Modifier.fillMaxSize(), color = Bg) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -287,10 +292,20 @@ class MainActivity : ComponentActivity() {
                                     leadingIcon = { Icon(Icons.Default.Search, null) },
                                     shape = RoundedCornerShape(14.dp))
                                 Spacer(Modifier.height(8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     listOf("ALL", "REVIEW", "USER", "SYSTEM").forEach {
                                         FilterChip(selected = filter == it, onClick = { filter = it },
                                             label = { Text(it, fontSize = 9.sp) })
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    TextButton(onClick = { riskFirst = !riskFirst },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                                        Text(if (riskFirst) "RISK FIRST" else "A–Z",
+                                            color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                                 Spacer(Modifier.height(5.dp))
@@ -351,6 +366,9 @@ private fun AppItem(app: AppRow, onClick: () -> Unit) {
             Text(app.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(app.pkg, color = Grey, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((if (app.system) "SYSTEM APP" else "USER APP") + "  •  v" + app.version,
+                color = Grey.copy(alpha = 0.82f), fontSize = 8.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             Status(app.status)
         }
