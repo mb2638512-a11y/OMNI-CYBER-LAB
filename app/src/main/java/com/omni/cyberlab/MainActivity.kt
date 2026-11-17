@@ -125,14 +125,16 @@ class MainActivity : ComponentActivity() {
                 var scanning by remember { mutableStateOf(false) }
                 var scanTime by remember { mutableStateOf("Waiting for first inventory") }
                 var bridge by remember { mutableStateOf("Checking Shizuku…") }
+                var settings by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
                 fun scan() {
                     scope.launch {
                         scanning = true
-                        apps = withContext(Dispatchers.IO) { readApps() }
-                        scanTime = "Inventory refreshed • " + java.text.SimpleDateFormat(
-                            "HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                        scanning = false
+                        try {
+                            apps = withContext(Dispatchers.IO) { readApps() }
+                            scanTime = "Inventory refreshed • " + java.text.SimpleDateFormat(
+                                "HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                        } finally { scanning = false }
                     }
                 }
                 fun bridgeStatus() {
@@ -149,116 +151,163 @@ class MainActivity : ComponentActivity() {
                 val high = apps.count { it.debug }
                 val shown = apps.filter {
                     (it.name.contains(query, true) || it.pkg.contains(query, true)) &&
-                        when (filter) {
-                            "REVIEW" -> it.findings.isNotEmpty()
-                            "USER" -> !it.system
-                            "SYSTEM" -> it.system
-                            else -> true
-                        }
+                    when (filter) {
+                        "REVIEW" -> it.findings.isNotEmpty()
+                        "USER" -> !it.system
+                        "SYSTEM" -> it.system
+                        else -> true
+                    }
                 }
                 Surface(Modifier.fillMaxSize(), color = Bg) {
-                    Column(Modifier.fillMaxSize().padding(horizontal = 17.dp)) {
-                        Spacer(Modifier.height(14.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(color = Raised, shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                        Spacer(Modifier.height(7.dp))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Surface(color = Raised, shape = RoundedCornerShape(12.dp)) {
                                 Icon(Icons.Default.Shield, null, tint = Green,
-                                    modifier = Modifier.padding(12.dp).size(27.dp))
+                                    modifier = Modifier.padding(10.dp).size(25.dp))
                             }
-                            Spacer(Modifier.width(11.dp))
+                            Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("OMNI CYBER LAB", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("DEVICE SECURITY CENTER", color = Grey, fontSize = 9.sp, letterSpacing = 2.sp)
+                                Text("OMNI CYBER LAB", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                                Text(if (settings) "CONTROL CENTER" else "INSTALLED APPLICATIONS",
+                                    color = Grey, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             }
-                            IconButton(onClick = { scan(); bridgeStatus() }, enabled = !scanning) {
-                                Icon(Icons.Default.Refresh, "Refresh", tint = Green)
+                            IconButton(onClick = { settings = !settings }) {
+                                if (settings) Icon(Icons.Default.ArrowBack, "Back to apps", tint = Green)
+                                else Icon(Icons.Default.Settings, "Settings", tint = Green)
                             }
                         }
-                        Spacer(Modifier.height(16.dp))
-                        if (selected == null) {
-                            Text("Your device at a glance", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                            Text("Offline-first • Local read-only app inventory", color = Grey, fontSize = 11.sp)
-                            Spacer(Modifier.height(13.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Metric("INSTALLED", apps.size.toString(), "Apps found", Blue, Modifier.weight(1f))
-                                Metric("REVIEW", review.toString(), "Need attention", Orange, Modifier.weight(1f))
-                                Metric("HIGH RISK", high.toString(), "Debug flag", Red, Modifier.weight(1f))
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Card(colors = CardDefaults.cardColors(containerColor = CardBg),
-                                shape = RoundedCornerShape(17.dp)) {
-                                Column(Modifier.padding(13.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("SCAN COVERAGE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        Spacer(Modifier.weight(1f))
-                                        Text(if (scanning) "SCANNING" else "INVENTORY DONE",
-                                            color = if (scanning) Orange else Green, fontSize = 10.sp)
+                        when {
+                            selected != null -> Detail(selected!!, onBack = { selected = null })
+                            settings -> LazyColumn(
+                                Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 28.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                item {
+                                    Text("Security settings", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                                    Text("Device overview and diagnostic controls", color = Grey, fontSize = 12.sp)
+                                }
+                                item {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Metric("INSTALLED", apps.size.toString(), "Apps found", Blue, Modifier.weight(1f))
+                                        Metric("REVIEW", review.toString(), "Need attention", Orange, Modifier.weight(1f))
+                                        Metric("HIGH RISK", high.toString(), "Debug flag", Red, Modifier.weight(1f))
                                     }
-                                    Spacer(Modifier.height(9.dp))
-                                    LinearProgressIndicator(
-                                        progress = { if (scanning) 0.5f else if (apps.isEmpty()) 0f else 1f },
-                                        modifier = Modifier.fillMaxWidth().height(6.dp),
-                                        color = Green, trackColor = Raised
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(if (scanning) "Reading package metadata…" else "${apps.size} / ${apps.size} apps inventoried",
+                                }
+                                item {
+                                    Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                                        shape = RoundedCornerShape(17.dp)) {
+                                        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("SCAN COVERAGE", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                Spacer(Modifier.weight(1f))
+                                                Text(if (scanning) "SCANNING" else "INVENTORY DONE",
+                                                    color = if (scanning) Orange else Green, fontSize = 10.sp)
+                                            }
+                                            Spacer(Modifier.height(10.dp))
+                                            LinearProgressIndicator(
+                                                progress = { if (scanning) 0.5f else if (apps.isEmpty()) 0f else 1f },
+                                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                                color = Green, trackColor = Raised)
+                                            Spacer(Modifier.height(9.dp))
+                                            Text("${apps.size} / ${apps.size} apps inventoried",
+                                                color = Grey, fontSize = 12.sp)
+                                            Spacer(Modifier.height(9.dp))
+                                            Text("CHECKED", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                            Text("App identity • version • signer • permissions • exported components • debug flag",
+                                                color = Grey, fontSize = 11.sp)
+                                            Spacer(Modifier.height(8.dp))
+                                            Text("NOT TESTED", color = Orange, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                            Text("Live behavior • malware activity • network/API • billing integrity • exploit confirmation",
+                                                color = Grey, fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                                item {
+                                    Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                                        shape = RoundedCornerShape(16.dp)) {
+                                        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("SHIZUKU / ADB BRIDGE", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Spacer(Modifier.weight(1f))
+                                                Text(if (bridge.startsWith("Connected")) "CONNECTED" else "OFFLINE",
+                                                    color = if (bridge.startsWith("Connected")) Green else Orange, fontSize = 10.sp)
+                                            }
+                                            Spacer(Modifier.height(7.dp))
+                                            Text(bridge, color = Grey, fontSize = 12.sp)
+                                            Row {
+                                                TextButton(onClick = {
+                                                    try {
+                                                        if (!Shizuku.pingBinder()) bridge = "Start Shizuku service first"
+                                                        else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                                                            Shizuku.requestPermission(4102); bridge = "Permission request sent"
+                                                        } else bridgeStatus()
+                                                    } catch (e: Exception) { bridge = "Error: ${e.message}" }
+                                                }) { Text("Grant / Check") }
+                                                TextButton(onClick = { bridgeStatus() }) { Text("Refresh") }
+                                            }
+                                        }
+                                    }
+                                }
+                                item {
+                                    Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                                        shape = RoundedCornerShape(16.dp)) {
+                                        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                                            Text("SCAN CONTROLS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Text("Refresh the local, read-only installed-app inventory.",
+                                                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+                                            Button(onClick = { scan(); bridgeStatus() }, enabled = !scanning,
+                                                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                                Icon(Icons.Default.Refresh, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(if (scanning) "Scanning…" else "Refresh app inventory")
+                                            }
+                                            Text(scanTime, color = Grey, fontSize = 10.sp,
+                                                modifier = Modifier.padding(top = 8.dp))
+                                        }
+                                    }
+                                }
+                                item {
+                                    Text("ABOUT THESE RESULTS", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                    Text("Review flags need manual review; they are not proof an app is hacked. This build inventories metadata only. Behavioral malware detection, network/API testing, billing integrity and exploit confirmation are not implemented.",
                                         color = Grey, fontSize = 11.sp)
-                                    Text("CHECKED: app identity • version • signer • permissions • exported components • debug flag",
-                                        color = Green, fontSize = 10.sp)
-                                    Spacer(Modifier.height(4.dp))
-                                    Text("NOT TESTED: live behavior • malware activity • network/API • billing integrity • exploit confirmation",
-                                        color = Orange, fontSize = 10.sp)
                                 }
                             }
-                            Spacer(Modifier.height(10.dp))
-                            Card(colors = CardDefaults.cardColors(containerColor = CardBg),
-                                shape = RoundedCornerShape(15.dp)) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("SHIZUKU / ADB BRIDGE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(Modifier.weight(1f))
-                                        Text(if (bridge.startsWith("Connected")) "● CONNECTED" else "● OFFLINE",
-                                            color = if (bridge.startsWith("Connected")) Green else Orange, fontSize = 9.sp)
-                                    }
-                                    Text(bridge, color = Grey, fontSize = 11.sp)
-                                    Row {
-                                        TextButton(onClick = {
-                                            try {
-                                                if (!Shizuku.pingBinder()) bridge = "Start Shizuku service first"
-                                                else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                                                    Shizuku.requestPermission(4102); bridge = "Permission request sent"
-                                                } else bridgeStatus()
-                                            } catch (e: Exception) { bridge = "Error: ${e.message}" }
-                                        }) { Text("Grant / Check") }
-                                        TextButton(onClick = { bridgeStatus() }) { Text("Refresh") }
+                            else -> {
+                                Text("Installed applications", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 8.dp))
+                                Text("${shown.size} apps • Tap an app to inspect its metadata",
+                                    color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 10.dp))
+                                OutlinedTextField(value = query, onValueChange = { query = it },
+                                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                                    placeholder = { Text("Search app or package…") },
+                                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                                    shape = RoundedCornerShape(14.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    listOf("ALL", "REVIEW", "USER", "SYSTEM").forEach {
+                                        FilterChip(selected = filter == it, onClick = { filter = it },
+                                            label = { Text(it, fontSize = 9.sp) })
                                     }
                                 }
-                            }
-                            Spacer(Modifier.height(13.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Installed applications", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.weight(1f))
-                                Text("${shown.size} shown", color = Grey, fontSize = 10.sp)
-                            }
-                            Spacer(Modifier.height(7.dp))
-                            OutlinedTextField(value = query, onValueChange = { query = it },
-                                modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                placeholder = { Text("Search app or package…") },
-                                leadingIcon = { Icon(Icons.Default.Search, null) },
-                                shape = RoundedCornerShape(13.dp))
-                            Spacer(Modifier.height(5.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                listOf("ALL", "REVIEW", "USER", "SYSTEM").forEach {
-                                    FilterChip(selected = filter == it, onClick = { filter = it },
-                                        label = { Text(it, fontSize = 9.sp) })
+                                Spacer(Modifier.height(5.dp))
+                                if (scanning && apps.isEmpty()) {
+                                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = Green)
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                                        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+                                    ) {
+                                        items(shown, key = { it.pkg }) { app ->
+                                            AppItem(app) { selected = app }
+                                        }
+                                    }
                                 }
                             }
-                            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 14.dp)) {
-                                items(shown, key = { it.pkg }) { app -> AppItem(app) { selected = app } }
-                            }
-                            Text(scanTime, color = Grey, fontSize = 9.sp,
-                                modifier = Modifier.padding(bottom = 6.dp))
-                        } else {
-                            Detail(selected!!, onBack = { selected = null })
                         }
                     }
                 }
