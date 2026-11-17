@@ -10,6 +10,7 @@ import android.graphics.pdf.PdfDocument
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.content.Intent
+import androidx.core.content.FileProvider
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,7 +65,7 @@ data class AppRow(
     val name: String, val pkg: String, val version: String, val icon: Bitmap?,
     val permissions: List<String>, val exported: Int, val debug: Boolean,
     val signer: String, val system: Boolean, val targetSdk: Int,
-    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList(), val archiveInventory: List<String> = emptyList()
+    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList(), val archiveInventory: List<String> = emptyList(), val apkPath: String? = null
 ) {
     val status: String get() = when {
         debug -> "HIGH RISK"
@@ -223,7 +224,7 @@ private fun classifyFinding(finding: String): Pair<String, String> {
                     p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
                     perms, exported, debug, signer,
                     ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir))
+                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir), ai.sourceDir)
             } catch (_: Exception) { null }
         }.sortedBy { it.name.lowercase() }
     }
@@ -305,7 +306,7 @@ private fun classifyFinding(finding: String): Pair<String, String> {
                                     } catch (_: Exception) { null }
                                     AppRow(pm.getApplicationLabel(ai).toString(), info.packageName,
                                         info.versionName ?: "Unknown", icon, perms, exported, debug,
-                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails, inspectApkArchive(file.absolutePath))
+                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails, inspectApkArchive(file.absolutePath), file.absolutePath)
                                 }
                                 selected = imported
                                 importMessage = "APK metadata loaded. Runtime behavior is not tested."
@@ -758,7 +759,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Open app", if (installed) "Launch this installed app." else "Imported APK is not installed; launch is unavailable.", if (installed) "AVAILABLE" else "NOT AVAILABLE", installed),
                 WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", if (installed) "AVAILABLE" else "NOT AVAILABLE FOR APK", installed),
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
-                WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL")
+                WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL"),
+                WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank())
             ))
         )
     }
