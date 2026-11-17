@@ -228,6 +228,66 @@ private fun inspectApkArchive(path: String?): List<String> {
 
 
 
+private fun rebuildApkFromSmali(originalApkPath: String?, smaliZipPath: String?, cacheDir: File): File {
+    val original = originalApkPath?.let { File(it) } ?: throw IllegalStateException("Original APK is unavailable")
+    val smaliArchive = smaliZipPath?.let { File(it) } ?: throw IllegalStateException("Select an edited Smali ZIP")
+    if (!original.isFile || !smaliArchive.isFile) throw IllegalStateException("Input file is missing")
+    val work = File(cacheDir, "rebuild-work-" + System.currentTimeMillis())
+    if (!work.mkdirs()) throw IllegalStateException("Cannot create rebuild workspace")
+    val output = File(cacheDir, "rebuilt-unsigned-" + System.currentTimeMillis() + ".apk")
+    try {
+        val extractedRoot = File(work, "source")
+        extractedRoot.mkdirs()
+        var smaliBytes = 0L
+        var smaliCount = 0
+        ZipFile(smaliArchive).use { sourceZip ->
+            val entries = sourceZip.entries().asSequence().toList()
+            entries.filter { !it.isDirectory && it.name.endsWith(".smali", true) }.forEach { entry ->
+                if (entry.name.startsWith("/") || entry.name.split("/").any { it == ".." }) throw IllegalArgumentException("Unsafe path in Smali ZIP")
+                if (entry.size !in 1..2L * 1024L * 1024L) throw IllegalArgumentException("Smali file exceeds 2 MB limit")
+                smaliBytes += entry.size
+                smaliCount++
+                if (smaliCount > 12000 || smaliBytes > 80L * 1024L * 1024L) throw IllegalArgumentException("Smali archive exceeds safety limits")
+                val target = File(extractedRoot, entry.name)
+                if (!target.canonicalPath.startsWith(extractedRoot.canonicalPath + File.separator)) throw IllegalArgumentException("Unsafe Smali output path")
+                target.parentFile?.mkdirs()
+                sourceZip.getInputStream(entry).use { input -> target.outputStream().use { out -> input.copyTo(out) } }
+            }
+        }
+        if (smaliCount == 0) throw IllegalArgumentException("No .smali source files found in ZIP")
+        val replacements = mutableMapOf<String, File>()
+        ZipFile(original).use { originalZip ->
+            val dexEntries = originalZip.entries().asSequence().filter { it.name.matches(Regex("classes([0-9]*)\\\\.dex")) }.sortedBy { if (it.name == "classes.dex") 1 else it.name.removePrefix("classes").removeSuffix(".dex").toIntOrNull() ?: 1 }.toList()
+            if (dexEntries.isEmpty()) throw IllegalArgumentException("Original APK contains no classes*.dex files")
+            dexEntries.forEachIndexed { index, dexEntry ->
+                val smaliDir = File(extractedRoot, "smali-${index}")
+                val sourceCount = if (smaliDir.isDirectory) smaliDir.walkTopDown().count { it.isFile && it.name.endsWith(".smali") } else 0
+                if (sourceCount > 0) {
+                    val dexOutput = File(work, "rebuilt-${index}.dex")
+                    val options = org.jf.smali.SmaliOptions().apply { apiLevel = 35; jobs = 2; outputDexFile = dexOutput.absolutePath }
+                    if (!org.jf.smali.Smali.assemble(options, smaliDir.absolutePath)) throw IllegalStateException("Smali assembly failed for ${dexEntry.name}")
+                    replacements[dexEntry.name] = dexOutput
+                }
+            }
+            if (replacements.isEmpty()) throw IllegalArgumentException("No matching smali-N folders found. Keep the folder structure from the exported disassembly ZIP.")
+            ZipOutputStream(output.outputStream().buffered()).use { targetZip ->
+                targetZip.setLevel(6)
+                originalZip.entries().asSequence().forEach { entry ->
+                    val upper = entry.name.uppercase()
+                    val signatureFile = upper.startsWith("META-INF/") && (upper == "META-INF/MANIFEST.MF" || upper.endsWith(".SF") || upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC") || upper.substringAfterLast("/").startsWith("SIG-"))
+                    if (!signatureFile) {
+                        targetZip.putNextEntry(ZipEntry(entry.name).apply { if (entry.time >= 0) time = entry.time })
+                        val replacement = replacements[entry.name]
+                        if (replacement != null) replacement.inputStream().use { it.copyTo(targetZip) }
+                        else if (!entry.isDirectory) originalZip.getInputStream(entry).use { it.copyTo(targetZip) }
+                        targetZip.closeEntry()
+                    }
+                }
+            }
+        }
+        return output
+    } catch (e: Exception) { output.delete(); throw e } finally { work.deleteRecursively() }
+}
 private fun disassembleApkToSmali(apkPath: String?, cacheDir: File): File {
     if (apkPath.isNullOrBlank()) throw IllegalStateException("APK source is unavailable")
     val apk = File(apkPath)
@@ -890,6 +950,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
         "Smali DEX disassembly" -> listOf("Extract DEX entries and disassemble them to Smali source using Baksmali.", "This is bytecode disassembly, not Java/Kotlin source reconstruction. Resources and binary AndroidManifest.xml are not decoded here.")
+        "Rebuild APK from Smali" -> listOf("Import the ZIP exported by Smali DEX disassembly after editing its .smali files.", "Matching smali-N folders are assembled into the original DEX entries; old APK signature files are removed. The result is unsigned and must be signed with your own key.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -940,6 +1001,10 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var disassemblyMessage by remember { mutableStateOf("") }
     var disassemblyOutputPath by remember { mutableStateOf<String?>(null) }
     var disassemblyRunning by remember { mutableStateOf(false) }
+    var smaliImportPath by remember { mutableStateOf<String?>(null) }
+    var rebuildMessage by remember { mutableStateOf("") }
+    var rebuiltApkPath by remember { mutableStateOf<String?>(null) }
+    var rebuildRunning by remember { mutableStateOf(false) }
     var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -1027,6 +1092,27 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 file.absolutePath
             }; signingMessage = "Keystore selected. Enter its credentials locally." } catch (e: Exception) { signingMessage = "Keystore selection failed: ${e.message}" }
         }
+    }
+    val smaliZipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) installScope.launch {
+            try {
+                smaliImportPath = withContext(Dispatchers.IO) {
+                    val file = File(context.cacheDir, "edited-smali-" + System.currentTimeMillis() + ".zip")
+                    context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { out -> input.copyTo(out) } } ?: throw IllegalStateException("Cannot read Smali ZIP")
+                    file.absolutePath
+                }
+                rebuildMessage = "Edited Smali ZIP selected."
+            } catch (e: Exception) { rebuildMessage = "Could not read ZIP: ${e.message}" }
+        }
+    }
+    val rebuiltExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val source = rebuiltApkPath?.let { File(it) } ?: throw IllegalStateException("Rebuilt APK unavailable")
+                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { input -> input.copyTo(output) } } ?: throw IllegalStateException("Cannot write destination")
+                rebuildMessage = "Unsigned rebuilt APK exported. Sign it with your own key before installation."
+            } catch (e: Exception) { rebuildMessage = "Export failed: ${e.message}" }
+        } else rebuildMessage = "Export cancelled."
     }
     val disassemblyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) {
@@ -1140,6 +1226,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Rebuild APK from Smali", "Reassemble edited Smali source into the matching DEX entries and produce an unsigned APK for your own app.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • REBUILD", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
@@ -1278,6 +1365,26 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Rebuild APK from Smali") {
+                                Button(onClick = { smaliZipPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Choose edited Smali ZIP") }
+                                Text(if (smaliImportPath == null) "No Smali ZIP selected" else File(smaliImportPath!!).name, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+                                Button(onClick = {
+                                    installScope.launch {
+                                        rebuildRunning = true
+                                        rebuildMessage = "Reassembling Smali and rebuilding unsigned APK…"
+                                        try {
+                                            val result = withContext(Dispatchers.IO) { rebuildApkFromSmali(app.apkPath, smaliImportPath, context.cacheDir) }
+                                            rebuiltApkPath = result.absolutePath
+                                            signingInputPath = result.absolutePath
+                                            rebuildMessage = "Rebuild complete. The unsigned APK is loaded into the Sign APK tool."
+                                        } catch (e: Exception) { rebuildMessage = "Rebuild failed: ${e.message ?: e.javaClass.simpleName}" }
+                                        rebuildRunning = false
+                                    }
+                                }, enabled = !rebuildRunning && !app.apkPath.isNullOrBlank() && smaliImportPath != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(if (rebuildRunning) "Rebuilding…" else "Rebuild unsigned APK") }
+                                if (rebuiltApkPath != null) Button(onClick = { rebuiltExportLauncher.launch("rebuilt-unsigned-" + app.pkg.substringAfterLast(".") + ".apk") }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Export unsigned APK") }
+                                if (rebuildMessage.isNotBlank()) Text(rebuildMessage, color = if (rebuildMessage.startsWith("Rebuild complete") || rebuildMessage.startsWith("Unsigned rebuilt")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("Only DEX code is rebuilt. Resources, icons, binary manifest and native libraries are preserved unchanged. APK signatures are removed; use the Sign APK tool with your own keystore. Split APK installation still requires a complete compatible set.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Smali DEX disassembly") {
                                 Button(onClick = {
