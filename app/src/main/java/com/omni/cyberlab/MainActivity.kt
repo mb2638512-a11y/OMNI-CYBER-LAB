@@ -573,6 +573,34 @@ private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<Str
     } catch (e: Exception) { listOf("Runtime log capture failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}") }
 }
 
+private fun runStructuredStaticChecks(app: AppRow): List<String> {
+    val checks = mutableListOf<String>()
+    fun add(severity: String, title: String, evidence: String, action: String) {
+        checks += "[$severity] $title"
+        checks += "  Evidence: $evidence"
+        checks += "  Next step: $action"
+    }
+    if (app.debug) add("HIGH", "Debuggable package", "Package metadata reports FLAG_DEBUGGABLE.", "Disable debugging in production and verify the release APK.")
+    if (app.findings.any { it.contains("Cleartext", true) }) add("MEDIUM", "Cleartext traffic policy", "Package metadata reports cleartext traffic allowed.", "Disable cleartext or scope exceptions narrowly; verify runtime traffic.")
+    if (app.findings.any { it.contains("backup", true) }) add("REVIEW", "Backup configuration", "Application backup flag is enabled.", "Inspect backup rules and exclude credentials and sensitive records.")
+    val sensitive = app.permissions.filter { p -> listOf("SMS", "CONTACTS", "LOCATION", "CAMERA", "RECORD_AUDIO", "PHONE", "BODY_SENSORS").any { p.contains(it, true) } }
+    if (sensitive.isNotEmpty()) add("INFO", "Sensitive permission requests", "${sensitive.size} permission(s): ${sensitive.take(8).joinToString()}", "Confirm necessity, runtime grants, just-in-time prompts and data minimization.")
+    val unguarded = app.exportedComponents.filter { it.contains("permission=none", true) }
+    if (unguarded.isNotEmpty()) add("REVIEW", "Exported components without declared component permission", "${unguarded.size} component(s); sample: ${unguarded.take(3).joinToString(" | ")}", "Review intent filters, caller validation, authentication and sensitive operations.")
+    if (app.signer == "Unavailable") add("REVIEW", "Signing fingerprint unavailable", "Package manager did not expose a signer fingerprint.", "Re-import a valid APK or inspect signing info on a supported Android version.")
+    val indicators = app.archiveInventory.filter { it.contains("Behavior/API marker", true) || it.contains("credential", true) || it.contains("secret", true) }
+    if (indicators.isNotEmpty()) add("INFO", "Static code/string indicators", "${indicators.size} bounded indicator(s): ${indicators.take(4).joinToString(" | ").take(400)}", "Manually inspect matching code paths; strings do not prove execution or malicious intent.")
+    if (checks.isEmpty()) {
+        checks += "[INFO] No configured static review rule matched."
+        checks += "  Evidence: Available package metadata and bounded archive indicators were checked."
+        checks += "  Next step: Perform authorized runtime, privacy and backend tests; no-match is not proof of safety."
+    }
+    checks.add(0, "STATIC SECURITY CHECKS • ${app.name} (${app.pkg})")
+    checks.add("Scope: package metadata and bounded APK archive/DEX indicators only.")
+    checks.add("Not tested: runtime behavior, native execution, encrypted/dynamic code, server controls or exploitability.")
+    return checks
+}
+
 private fun classifyFinding(finding: String): Pair<String, String> {
     val value = finding.lowercase()
     return when {
@@ -1176,6 +1204,7 @@ private fun inspectResourceInventory(path: String?): List<String> {
 
 private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String> {
     return when (feature.title) {
+        "Automated static security checks" -> runStructuredStaticChecks(app)
         "Security overview" -> buildList {
             add("Local package metadata reviewed for " + app.name + ".")
             add("Inventory state: " + app.status + ".")
@@ -1470,6 +1499,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     val categories = remember(app) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
+                WorkspaceFeature("Automated static security checks", "Run structured metadata and bounded archive rules with severity, evidence and remediation notes.", "READY • STATIC RULES", true),
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
@@ -1855,6 +1885,14 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Text(comparisonMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 9.dp))
                                 }
                                 Text("Comparison is static metadata only. It does not run either APK or prove that one build is safe.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Automated static security checks") {
+                                val reportLines = featureResults.ifEmpty { runStructuredStaticChecks(app) }
+                                Text("RULE RESULTS • ${reportLines.count { it.startsWith("[") }}", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                reportLines.forEach { line ->
+                                    Text(line, color = when { line.startsWith("[HIGH]") -> Red; line.startsWith("[MEDIUM]") || line.startsWith("[REVIEW]") -> Orange; line.startsWith("[INFO]") -> Blue; else -> Grey }, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                                }
+                                Text("Rule-based static triage only. Findings require manual validation; no match is not proof of safety.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Embedded network endpoints") {
                                 val hosts = app.archiveInventory.filter { it.startsWith("ENDPOINT HOST •") }
