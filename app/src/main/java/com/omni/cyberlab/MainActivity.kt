@@ -112,10 +112,10 @@ private fun inspectApkArchive(path: String?): List<String> {
                     scannedBytes += bytes.size
                     val content = bytes.toString(Charsets.UTF_8)
                     if (entry.name.contains("network_security_config", ignoreCase = true) || entry.name.endsWith(".xml", ignoreCase = true)) {
-                        if (Regex("""(?i)cleartextTrafficPermitted\\s*=\\s*["']true["']""").containsMatchIn(content)) {
+                        if (Regex("""(?i)cleartextTrafficPermitted\s*=\s*["']true["']""").containsMatchIn(content)) {
                             networkConfigSignals.add("Cleartext traffic explicitly permitted • ${entry.name}")
                         }
-                        if (Regex("""(?i)<certificates[^>]+src\\s*=\\s*["']user["']""").containsMatchIn(content)) {
+                        if (Regex("""(?i)<certificates[^>]+src\s*=\s*["']user["']""").containsMatchIn(content)) {
                             networkConfigSignals.add("User-added certificate trust anchor present • ${entry.name}; review intended debug-only use")
                         }
                         if (Regex("""(?i)<debug-overrides""").containsMatchIn(content)) {
