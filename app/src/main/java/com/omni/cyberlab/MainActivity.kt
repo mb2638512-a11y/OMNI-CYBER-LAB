@@ -201,7 +201,7 @@ private suspend fun inspectHttpsEndpoint(rawInput: String): List<String> = withC
         conn.connect()
         val results = mutableListOf<String>()
         results.add("Endpoint host: ${uri.host}")
-        results.add("TLS protocol: ${conn.session.protocol}")
+        results.add("TLS protocol: negotiated protocol is not exposed by this Android connection API.")
         results.add("Cipher suite: ${conn.cipherSuite}")
         val cert = conn.serverCertificates.firstOrNull() as? X509Certificate
         if (cert != null) {
@@ -744,7 +744,8 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Export audit summary" -> listOf("Audit report assembled from current static inventory.", "Use Share audit report or Save PDF report to export it.")
         "Open app" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK is not installed." else "Use Launch app to open the installed app.")
         "Open system app settings" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK has no Android settings page on this device." else "Use Open Android app settings to view system controls.")
-        "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result.")
+        "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result."),
+        "Create APK backup" -> listOf("Export a copy of the available APK source using Android document picker.", "Split APK applications may need a complete package set; this exports only the selected base APK.")
         else -> listOf("Automated test engine is not implemented for this feature yet.", "No test was run and no pass/fail result is claimed.")
     }
 }
@@ -754,6 +755,18 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     val installed = app.installer != "Imported APK • not installed"
     var pendingPdfText by remember { mutableStateOf("") }
     var installMessage by remember { mutableStateOf("") }
+    var backupMessage by remember { mutableStateOf("") }
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri ->
+        if (uri != null) {
+            try {
+                val source = app.apkPath?.let { File(it) } ?: throw IllegalStateException("APK source unavailable")
+                if (!source.isFile) throw IllegalStateException("APK source file not found")
+                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { input -> input.copyTo(output) } }
+                    ?: throw IllegalStateException("Could not open destination")
+                backupMessage = "APK backup exported successfully."
+            } catch (e: Exception) { backupMessage = "Backup failed: ${e.message}" }
+        } else backupMessage = "Backup cancelled."
+    }
     val installScope = rememberCoroutineScope()
     val installLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         installMessage = when (result.resultCode) {
@@ -847,7 +860,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
-                WorkspaceFeature("DEX & native libraries", "Inventory DEX bytecode files, native .so libraries and network config filenames. No decompilation or malware verdict.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE INVENTORY", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan sampled text assets for exposed credential patterns.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + TEXT SCAN", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
@@ -887,7 +900,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", if (installed) "AVAILABLE" else "NOT AVAILABLE FOR APK", installed),
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL"),
-                WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank())
+                WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Create APK backup", "Export the available base APK to a location you choose.", if (app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • EXPORT", !app.apkPath.isNullOrBlank())
             ))
         )
     }
@@ -1005,10 +1019,16 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }
                                 Text("Android will ask for confirmation. Silent installation and security prompts are not bypassed. A split APK app may require its complete split package set.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
                                 if (installMessage.isNotBlank()) Text(installMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            } else if (current.title == "Create APK backup") {
+                                Button(onClick = { backupLauncher.launch(app.pkg.substringAfterLast(".") + "-" + app.version + ".apk") }, enabled = !app.apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text("Export APK backup")
+                                }
+                                if (backupMessage.isNotBlank()) Text(backupMessage, color = if (backupMessage.startsWith("APK backup exported")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("This copies the available APK file; it does not decrypt app data or guarantee a complete backup for split APK installs.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "DEX & native libraries") {
                                 Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
-                                Text("This is filename/ZIP-entry inventory only. DEX instructions, embedded secrets, library vulnerabilities and runtime behavior are not analyzed yet.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("The archive scanner samples limited text/config files for credential-like patterns and redacts matched values. It does not decompile DEX, inspect binary resources, audit native code or prove malware absence.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "Debug & exported components") {
                                 Text("${app.exportedComponents.size} exported components found", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 if (app.exportedComponents.isEmpty()) Text("No exported components were reported by package metadata.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
