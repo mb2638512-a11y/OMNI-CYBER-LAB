@@ -574,6 +574,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
                 WorkspaceFeature("Permission inventory", "View every permission declared by this app.", "${app.permissions.size} FOUND", true),
                 WorkspaceFeature("Sensitive permissions", "Review camera, microphone, location, contacts and SMS requests.", if (app.findings.any { it.contains("Sensitive") }) "REVIEW" else "BASIC CHECK", true),
+                WorkspaceFeature("Runtime permission grants", "Check declared permissions against Android's current grant state.", if (installed) "LIVE CHECK" else "APK ONLY", installed),
                 WorkspaceFeature("Private app data", "Private sandbox contents are not accessible to this inventory tool.", "NOT ACCESSIBLE"),
                 WorkspaceFeature("Privacy review", "A full privacy policy and data-flow review is not implemented.", "NOT IMPLEMENTED")
             )),
@@ -602,7 +603,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             )),
             WorkspaceCategory("App actions", "Safe device-level actions", listOf(
                 WorkspaceFeature("Open app", if (installed) "Launch this installed app." else "Imported APK is not installed; launch is unavailable.", if (installed) "AVAILABLE" else "NOT AVAILABLE", installed),
-                WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", "AVAILABLE", true),
+                WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", if (installed) "AVAILABLE" else "NOT AVAILABLE FOR APK", installed),
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL")
             ))
@@ -670,8 +671,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                            if (current.title == "Permission inventory" || current.title == "Sensitive permissions") {
-                                val visiblePermissions = if (current.title == "Sensitive permissions") {
+                            if (current.title == "Permission inventory" || current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
+                                val visiblePermissions = if (current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
                                     app.permissions.filter { p -> listOf("CAMERA", "RECORD_AUDIO", "LOCATION", "CONTACTS", "SMS", "PHONE", "CALENDAR", "BODY_SENSORS").any { p.contains(it) } }
                                 } else app.permissions
                                 Text("${visiblePermissions.size} permission entries", color = Green,
@@ -682,9 +683,16 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                         color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
                                 } else {
                                     visiblePermissions.forEach { permission ->
-                                        Text("• $permission", color = Grey, fontSize = 10.sp,
-                                            modifier = Modifier.padding(top = 5.dp))
+                                        val isGranted = installed && context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+                                        val line = if (current.title == "Runtime permission grants" && installed)
+                                            (if (isGranted) "GRANTED • " else "NOT GRANTED • ") + permission else permission
+                                        Text("• $line", color = if (current.title == "Runtime permission grants" && isGranted) Green else Grey,
+                                            fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
                                     }
+                                }
+                                if (current.title == "Runtime permission grants" && !installed) {
+                                    Text("An APK file is not installed, so Android runtime grant status cannot be queried.",
+                                        color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                                 }
                                 Text("Declared permissions are requests, not proof that access was granted or abused.",
                                     color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
