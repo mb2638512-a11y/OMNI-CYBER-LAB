@@ -551,7 +551,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 item {
                                     Text("ABOUT THESE RESULTS", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                    Text("Review flags need manual review; they are not proof an app is hacked. This build inventories metadata only. Behavioral malware detection, network/API testing, billing integrity and exploit confirmation are not implemented.",
+                                    Text("Review flags need manual review; they are not proof an app is hacked. Current checks include package metadata, APK archive/text-pattern scanning, SHA-256 hashing, signer comparison and a manual one-request HTTPS/TLS check. Runtime malware behavior, full API crawling, billing sandbox validation and exploit confirmation are not implemented.",
                                         color = Grey, fontSize = 11.sp)
                                 }
                             }
