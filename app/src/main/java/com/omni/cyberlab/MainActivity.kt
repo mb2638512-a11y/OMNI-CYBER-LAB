@@ -667,26 +667,30 @@ private fun Status(status: String) {
 
 @Composable
 private fun AppItem(app: AppRow, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        if (app.icon != null) Image(app.icon.asImageBitmap(), null, Modifier.size(44.dp))
-        else Surface(Modifier.size(44.dp), shape = RoundedCornerShape(12.dp), color = Raised) {
-            Box(contentAlignment = Alignment.Center) { Text(app.name.take(1), color = Green) }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        shape = RoundedCornerShape(17.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(50.dp), color = Raised, shape = RoundedCornerShape(14.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (app.icon != null) Image(app.icon.asImageBitmap(), null, Modifier.size(42.dp))
+                    else Text(app.name.take(1).uppercase(), color = Green, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(app.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(app.pkg, color = Grey, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text((if (app.system) "SYSTEM" else "USER APP") + "  •  VERSION " + app.version,
+                    color = Grey.copy(alpha = 0.85f), fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
+                Spacer(Modifier.height(6.dp))
+                Status(app.status)
+            }
+            Text("›", color = Green, fontSize = 26.sp, fontWeight = FontWeight.Light)
         }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(app.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(app.pkg, color = Grey, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text((if (app.system) "SYSTEM APP" else "USER APP") + "  •  v" + app.version,
-                color = Grey.copy(alpha = 0.82f), fontSize = 8.sp, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Status(app.status)
-        }
-        Text("›", color = Grey, fontSize = 24.sp)
     }
-    HorizontalDivider(color = Raised)
 }
 
 private data class WorkspaceFeature(
@@ -1223,20 +1227,29 @@ private fun EndpointAuditPanel() {
 
 @Composable
 private fun WorkspaceFeatureCard(feature: WorkspaceFeature, onClick: () -> Unit) {
+    val tint = if (feature.available) Green else Orange
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = CardBg),
-        shape = RoundedCornerShape(14.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(34.dp), color = tint.copy(alpha = .12f), shape = RoundedCornerShape(11.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(if (feature.available) "✓" else "•", color = tint, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
-                Text(feature.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(feature.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(feature.description, color = Grey, fontSize = 10.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp))
-                Text(feature.state, color = if (feature.available) Green else Orange,
-                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 7.dp))
+                Surface(color = tint.copy(alpha = .12f), shape = RoundedCornerShape(30.dp),
+                    modifier = Modifier.padding(top = 7.dp)) {
+                    Text(feature.state, color = tint, fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                }
             }
             Text("›", color = Green, fontSize = 24.sp)
         }
