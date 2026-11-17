@@ -198,7 +198,7 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager
             }
         } catch (e: Exception) { "ARCHIVE ERROR • ${e.message ?: "unreadable ZIP"}" }
         @Suppress("DEPRECATION")
-        val parsed = try { packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES) } catch (_: Exception) { null }
+        val parsed = try { packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES or PackageManager.GET_SIGNING_CERTIFICATES) } catch (_: Exception) { null }
         val parsedPackage = parsed?.packageName ?: "unparsed"
         val parsedVersion = parsed?.let { info ->
             if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
@@ -206,8 +206,11 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager
                 info.versionCode.toLong()
             }
         }
-        @Suppress("DEPRECATION")
-        val signer = parsed?.signatures?.firstOrNull()?.toByteArray()?.let { bytes -> MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { b -> "%02X".format(b) } }
+        val signerBytes = if (Build.VERSION.SDK_INT >= 28) parsed?.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else {
+            @Suppress("DEPRECATION")
+            parsed?.signatures?.firstOrNull()?.toByteArray()
+        }
+        val signer = signerBytes?.let { bytes -> MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { b -> "%02X".format(b) } }
         if (parsed == null) consistencyWarnings++
         if (baselinePackage == null && parsedPackage != "unparsed") baselinePackage = parsedPackage
         else if (parsedPackage != "unparsed" && parsedPackage != baselinePackage) consistencyWarnings++
