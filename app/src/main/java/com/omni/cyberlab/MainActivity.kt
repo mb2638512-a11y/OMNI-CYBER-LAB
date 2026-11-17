@@ -268,37 +268,51 @@ private fun inspectResourceTableLocales(path: String?): String {
     if (!file.isFile) return "APK file is no longer available."
     return try {
         ApkFile(file).use { apk ->
-            val locales = apk.locales.sortedBy { it.toLanguageTag() }
-            val output = StringBuilder()
-            output.append("RESOURCE TABLE CONFIGURATION INSPECTION\n")
-            output.append("resources.arsc: ").append(if (ZipFile(file).use { it.getEntry("resources.arsc") != null }) "present" else "not found").append("\n")
-            output.append("Locale configurations reported by parser: ").append(locales.size).append("\n")
-            if (locales.isEmpty()) output.append("No locale-specific configurations reported; default resources may still exist.\n")
-            val originalLocale = apk.preferredLocale
-            locales.take(24).forEach { locale ->
-                apk.preferredLocale = locale
-                val manifest = apk.manifestXml ?: ""
-                val appTag = Regex("<application\\b[^>]*>", RegexOption.IGNORE_CASE).find(manifest)?.value.orEmpty()
-                val label = Regex("android:label=[\\\"]([^\\\"]+)[\\\"]", RegexOption.IGNORE_CASE).find(appTag)?.groupValues?.getOrNull(1)
-                output.append("LOCALE • ").append(locale.toLanguageTag()).append(" • application label: ").append(label ?: "not declared/resolved").append("\n")
+            ZipFile(file).use { zip ->
+                val output = StringBuilder()
+                val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
+                val resourceEntries = entries.filter { it.name.startsWith("res/") }
+                val table = zip.getEntry("resources.arsc")
+                output.append("RESOURCE TABLE CONFIGURATION INSPECTION\n")
+                output.append("resources.arsc: ").append(if (table != null) "present • ${table.size} bytes" else "not found").append("\n")
+                if (table != null && table.size in 1..(16L * 1024L * 1024L)) {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    zip.getInputStream(table).use { input ->
+                        val buffer = ByteArray(8192)
+                        while (true) { val count = input.read(buffer); if (count <= 0) break; digest.update(buffer, 0, count) }
+                    }
+                    output.append("resources.arsc SHA-256: ").append(digest.digest().joinToString("") { "%02X".format(it) }).append("\n")
+                }
+                val locales = apk.locales.sortedBy { it.toLanguageTag() }
+                output.append("Locale configurations reported by parser: ").append(locales.size).append("\n")
+                if (locales.isEmpty()) output.append("No locale-specific configurations reported; default resources may still exist.\n")
+                val originalLocale = apk.preferredLocale
+                locales.take(32).forEach { locale ->
+                    apk.preferredLocale = locale
+                    val manifest = apk.manifestXml ?: ""
+                    val appTag = manifest.substringAfter("<application", "").substringBefore(">", "")
+                    val label = Regex("android:label=\"([^\"]+)\"").find(appTag)?.groupValues?.getOrNull(1)
+                    output.append("LOCALE • ").append(locale.toLanguageTag()).append(" • application label: ").append(label ?: "not declared/resolved").append("\n")
+                }
+                apk.preferredLocale = originalLocale
+                val typeCounts = resourceEntries.groupingBy { it.name.split("/").getOrNull(1)?.substringBefore("-") ?: "unknown" }.eachCount().toSortedMap()
+                output.append("\nRESOURCE FILE INVENTORY • ").append(resourceEntries.size).append(" files\n")
+                typeCounts.forEach { (type, count) -> output.append("TYPE • ").append(type).append(" • ").append(count).append(" files\n") }
+                val valueConfigs = resourceEntries.mapNotNull { entry -> entry.name.split("/").getOrNull(1)?.takeIf { it.startsWith("values") } }.distinct().sorted()
+                output.append("\nRESOURCE VALUE CONFIGURATIONS • ").append(valueConfigs.size).append("\n")
+                valueConfigs.take(100).forEach { output.append("CONFIG • res/").append(it).append("\n") }
+                output.append("\nRESOURCE FILE DETAILS (first 180 sorted entries)\n")
+                resourceEntries.sortedBy { it.name }.take(180).forEach { entry -> output.append(entry.name).append(" • ").append(entry.size.coerceAtLeast(0L)).append(" bytes\n") }
+                output.append("\nTotal declared uncompressed resource bytes: ").append(resourceEntries.sumOf { it.size.coerceAtLeast(0L) }).append("\n")
+                if (resourceEntries.size > 180) output.append("DETAIL LIMIT • ${resourceEntries.size - 180} additional resource paths omitted.\n")
+                output.append("\nThis inventories resource paths, file sizes, resource-table hash and parser-reported locale configurations. It does not resolve every resource ID/value, decode every binary XML file, or edit/rebuild resources. Resource aliases, overlays, dynamic features and parser limitations may affect resolution.")
+                output.toString().take(26000)
             }
-            apk.preferredLocale = originalLocale
-            val valueConfigs = ZipFile(file).use { zip ->
-                zip.entries().asSequence().map { it.name }
-                    .filter { it.startsWith("res/values") && !it.endsWith("/") }
-                    .map { it.substringBeforeLast('/') }
-                    .distinct().sorted().take(80).toList()
-            }
-            output.append("\nRESOURCE VALUE CONFIGURATION DIRECTORIES • ").append(valueConfigs.size).append("\n")
-            valueConfigs.forEach { output.append("CONFIG • ").append(it).append("\n") }
-            output.append("\nThis parses the resource table for supported locales and resolves localized manifest metadata where available. It does not enumerate every resource ID/value or edit/rebuild resources. Resource aliases, overlays, dynamic features and parser limitations may affect resolution.")
-            output.toString().take(18000)
         }
     } catch (e: Exception) {
         "Resource-table inspection failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}"
     }
 }
-
 private fun inspectApkArchive(path: String?): List<String> {
     if (path.isNullOrBlank()) return listOf("Archive path unavailable")
     return try {
