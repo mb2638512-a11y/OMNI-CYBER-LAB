@@ -1480,24 +1480,36 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             try {
                 val pdf = PdfDocument()
                 val paint = Paint().apply { textSize = 10f; isAntiAlias = true }
-                val lines = pendingPdfText.lines()
+                val lines = pendingPdfText.lines().flatMap { sourceLine ->
+                    if (sourceLine.isBlank()) listOf("") else {
+                        val wrapped = mutableListOf<String>()
+                        var current = ""
+                        sourceLine.split(Regex("\\s+")).forEach { word ->
+                            if (current.isNotEmpty() && current.length + word.length + 1 > 92) { wrapped += current; current = word }
+                            else current = if (current.isEmpty()) word else current + " " + word
+                        }
+                        if (current.isNotEmpty()) wrapped += current
+                        wrapped
+                    }
+                }
                 var pageNumber = 1
                 var index = 0
                 while (index < lines.size) {
                     val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
                     var y = 42f
                     while (index < lines.size && y < 810f) {
-                        val line = lines[index].take(105)
-                        page.canvas.drawText(line, 36f, y, paint)
+                        page.canvas.drawText(lines[index], 36f, y, paint)
                         y += 15f
                         index++
                     }
                     pdf.finishPage(page)
                     pageNumber++
                 }
-                context.contentResolver.openOutputStream(uri)?.use { pdf.writeTo(it) }
+                val output = context.contentResolver.openOutputStream(uri) ?: throw IllegalStateException("Could not open PDF destination")
+                output.use { pdf.writeTo(it) }
                 pdf.close()
-            } catch (_: Exception) { }
+                Toast.makeText(context, "Audit PDF saved", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) { Toast.makeText(context, "PDF export failed: " + (e.message ?: "unknown error"), Toast.LENGTH_LONG).show() }
         }
     }
     fun openInstalledApp() {
@@ -1529,6 +1541,26 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             if (manifestSignals.isEmpty()) appendLine("- No backup/cleartext metadata flags raised")
             else manifestSignals.forEach { appendLine("- " + it) }
             appendLine("Signer SHA-256: " + app.signer)
+            appendLine("Generated: " + java.time.Instant.now().toString())
+            appendLine()
+            appendLine("MANUAL TEST CHECKLIST STATUS")
+            val checklistPlans = mapOf(
+                "Network traffic" to listOf("Use a debug build and a controlled test device/emulator", "Capture only test-account traffic through an authorized proxy", "Review TLS validation and debug-only certificate trust configuration", "Check that tokens, passwords and personal data are not logged", "Verify server-side authorization for every sensitive API action", "Check redirects, cleartext requests and error responses"),
+                "Offline behavior" to listOf("Record baseline behavior while online", "Enable airplane mode and relaunch the app", "Check cached screens and graceful offline messages", "Check queued writes and retry behavior after reconnect", "Verify retries do not duplicate payments or transactions", "Check expired sessions and stale entitlements while offline"),
+                "Privacy review" to listOf("Map each personal-data field collected and its purpose", "Inventory analytics, advertising and other third-party SDKs", "Verify permission requests are necessary and just-in-time", "Review encryption for sensitive local and network data", "Document retention, deletion and account-export behavior", "Match actual data flows with the app privacy disclosures")
+            )
+            checklistPlans.forEach { (title, items) ->
+                val checked = checklistPrefs.getStringSet("manual:" + app.pkg + ":" + title, emptySet()) ?: emptySet()
+                appendLine(title + ": " + checked.size + "/" + items.size + " marked complete")
+                items.forEach { appendLine("  [" + (if (checked.contains(it)) "X" else " ") + "] " + it) }
+            }
+            val billingMarked = checklistPrefs.getStringSet("billing:" + app.pkg, emptySet()) ?: emptySet()
+            appendLine("Billing sandbox checklist: " + billingMarked.size + " items marked complete")
+            billingMarked.sorted().forEach { appendLine("  [X] " + it) }
+            appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
+            if (runtimeLogReport.isNotBlank()) { appendLine(); appendLine("RUNTIME LOG TRIAGE SNAPSHOT"); appendLine(runtimeLogReport) }
+            if (shizukuReport.isNotBlank()) { appendLine(); appendLine("SHIZUKU DIAGNOSTIC SNAPSHOT"); appendLine(shizukuReport) }
+            appendLine()
             appendLine("Requested permissions:")
             app.permissions.forEach { permission ->
                 val grant = if (installed) {
@@ -1865,8 +1897,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 testItems.forEach { item ->
                                     Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Checkbox(checked = billingChecks.contains(item), onCheckedChange = { checked ->
-                                            billingChecks = if (checked) billingChecks + item else billingChecks - item
-                                            checklistPrefs.edit().putStringSet("billing:${app.pkg}", billingChecks.toSet()).apply()
+                                            val next = if (checked) billingChecks + item else billingChecks - item
+                                            billingChecks = next
+                                            checklistPrefs.edit().putStringSet("billing:${app.pkg}", next.toSet()).apply()
                                         })
                                         Text(item, color = Grey, fontSize = 10.sp)
                                     }
