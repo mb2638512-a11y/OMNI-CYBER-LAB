@@ -808,6 +808,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Signer & integrity" -> listOf("Signer certificate SHA-256: " + app.signer, "APK file SHA-256 is included in the archive inventory.", "Compare the signer fingerprint with a trusted release record; matching signer identity is not a malware verdict.")
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
         "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
+        "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -844,6 +845,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var comparisonMessage by remember { mutableStateOf("") }
     var shizukuReport by remember { mutableStateOf("") }
     var shizukuRunning by remember { mutableStateOf(false) }
+    var billingChecks by remember(app.pkg) { mutableStateOf(setOf<String>()) }
     var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -1031,7 +1033,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Local database", "Private databases remain inside the app sandbox.", "NOT ACCESSIBLE")
             )),
             WorkspaceCategory("Billing & subscriptions", "Review purchases without bypassing them", listOf(
-                WorkspaceFeature("In-app products", "Product catalog and billing integrity are not inspected in this build.", "NOT TESTED"),
+                WorkspaceFeature("In-app products", "Review product IDs and test-store configuration for an app you own.", "MANUAL TEST PLAN"),
+                WorkspaceFeature("Billing sandbox checklist", "Run a structured checklist for test purchases, entitlement verification and subscription lifecycle.", "TEST PLAN READY", true),
                 WorkspaceFeature("Subscriptions", "Subscription status must be checked through the official store/account.", "NOT CONNECTED"),
                 WorkspaceFeature("Coins, gold & virtual items", "Virtual currency balances and purchase records are not read.", "NOT ACCESSIBLE"),
                 WorkspaceFeature("License integrity", "No license bypass or payment unlocking. Verification is not implemented.", "NOT IMPLEMENTED")
@@ -1142,6 +1145,32 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Billing sandbox checklist") {
+                                val testItems = listOf(
+                                    "Create an internal test track and add tester accounts",
+                                    "Confirm product IDs and subscription base plans are active",
+                                    "Test a successful purchase using a license tester",
+                                    "Test user cancellation and pending payment states",
+                                    "Verify the backend validates purchase tokens with Google",
+                                    "Acknowledge or consume purchases exactly once",
+                                    "Reject duplicate/replayed purchase events safely",
+                                    "Test refund, revoke and subscription expiry handling",
+                                    "Restore valid purchases after reinstall or device change",
+                                    "Test offline, timeout and retry behavior",
+                                    "Grant entitlements only after verified purchase state"
+                                )
+                                Text("${billingChecks.size} / ${testItems.size} checks completed", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                LinearProgressIndicator(progress = { billingChecks.size.toFloat() / testItems.size.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp), color = Green)
+                                testItems.forEach { item ->
+                                    Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = billingChecks.contains(item), onCheckedChange = { checked ->
+                                            billingChecks = if (checked) billingChecks + item else billingChecks - item
+                                        })
+                                        Text(item, color = Grey, fontSize = 10.sp)
+                                    }
+                                }
+                                Text("Use Google Play test environment and test accounts. Checklist completion is a manual record, not automated billing verification.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Shizuku package diagnostics") {
                                 Button(onClick = {
