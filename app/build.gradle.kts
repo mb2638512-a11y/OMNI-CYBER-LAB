@@ -37,5 +37,6 @@ dependencies {
  implementation("org.smali:baksmali:2.5.2")
  implementation("org.smali:dexlib2:2.5.2")
  implementation("org.smali:smali:2.5.2")
+ implementation("net.dongliu:apk-parser:2.6.10")
  debugImplementation("androidx.compose.ui:ui-tooling")
 }
