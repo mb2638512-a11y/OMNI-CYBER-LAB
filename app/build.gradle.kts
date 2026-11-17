@@ -36,5 +36,6 @@ dependencies {
  implementation("com.android.tools.build:apksig:8.7.3")
  implementation("org.smali:baksmali:2.5.2")
  implementation("org.smali:dexlib2:2.5.2")
+ implementation("org.smali:smali:2.5.2")
  debugImplementation("androidx.compose.ui:ui-tooling")
 }
