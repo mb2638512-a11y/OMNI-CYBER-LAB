@@ -228,6 +228,45 @@ private fun inspectApkArchive(path: String?): List<String> {
 
 
 
+private fun disassembleApkToSmali(apkPath: String?, cacheDir: File): File {
+    if (apkPath.isNullOrBlank()) throw IllegalStateException("APK source is unavailable")
+    val apk = File(apkPath)
+    if (!apk.isFile) throw IllegalStateException("APK source file not found")
+    val work = File(cacheDir, "smali-work-" + System.currentTimeMillis())
+    if (!work.mkdirs()) throw IllegalStateException("Cannot create disassembly workspace")
+    val outputZip = File(cacheDir, "smali-disassembly-" + System.currentTimeMillis() + ".zip")
+    try {
+        ZipFile(apk).use { zip ->
+            val dexEntries = zip.entries().asSequence().filter { it.name.matches(Regex("classes([0-9]*)\\\\.dex")) }.take(12).toList()
+            if (dexEntries.isEmpty()) throw IllegalArgumentException("No classes*.dex files found in APK")
+            var totalDexBytes = 0L
+            dexEntries.forEachIndexed { index, entry ->
+                if (entry.size > 16L * 1024L * 1024L) throw IllegalArgumentException("DEX entry exceeds 16 MB safety limit: ${entry.name}")
+                totalDexBytes += entry.size.coerceAtLeast(0L)
+                if (totalDexBytes > 48L * 1024L * 1024L) throw IllegalArgumentException("Combined DEX size exceeds 48 MB safety limit")
+                val dexFile = File(work, "input-${index}.dex")
+                zip.getInputStream(entry).use { input -> dexFile.outputStream().use { output -> input.copyTo(output) } }
+                val dex = org.jf.dexlib2.DexFileFactory.loadDexFile(dexFile, org.jf.dexlib2.Opcodes.getDefault())
+                val outDir = File(work, "smali-${index}")
+                if (!outDir.mkdirs()) throw IllegalStateException("Cannot create Smali output directory")
+                val options = org.jf.baksmali.BaksmaliOptions().apply { apiLevel = 35; debugInfo = true; accessorComments = true }
+                if (!org.jf.baksmali.Baksmali.disassembleDexFile(dex, outDir, 2, options)) throw IllegalStateException("Baksmali reported a disassembly error for ${entry.name}")
+            }
+        }
+        ZipOutputStream(outputZip.outputStream().buffered()).use { zipOut ->
+            work.walkTopDown().filter { it.isFile && !it.name.startsWith("input-") }.forEach { file ->
+                val relative = file.relativeTo(work).invariantSeparatorsPath
+                zipOut.putNextEntry(ZipEntry(relative))
+                file.inputStream().use { it.copyTo(zipOut) }
+                zipOut.closeEntry()
+            }
+        }
+        return outputZip
+    } catch (e: Exception) {
+        outputZip.delete()
+        throw e
+    } finally { work.deleteRecursively() }
+}
 private fun startShizukuProcess(command: Array<String>): java.lang.Process {
     // Shizuku API 13 keeps newProcess private; migrate this compatibility bridge to UserService before API 14.
     val method = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
@@ -850,6 +889,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
+        "Smali DEX disassembly" -> listOf("Extract DEX entries and disassemble them to Smali source using Baksmali.", "This is bytecode disassembly, not Java/Kotlin source reconstruction. Resources and binary AndroidManifest.xml are not decoded here.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -897,6 +937,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var signingMessage by remember { mutableStateOf("") }
     var signedOutputPath by remember { mutableStateOf<String?>(null) }
     var signingRunning by remember { mutableStateOf(false) }
+    var disassemblyMessage by remember { mutableStateOf("") }
+    var disassemblyOutputPath by remember { mutableStateOf<String?>(null) }
+    var disassemblyRunning by remember { mutableStateOf(false) }
     var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -984,6 +1027,15 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 file.absolutePath
             }; signingMessage = "Keystore selected. Enter its credentials locally." } catch (e: Exception) { signingMessage = "Keystore selection failed: ${e.message}" }
         }
+    }
+    val disassemblyExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val source = disassemblyOutputPath?.let { File(it) } ?: throw IllegalStateException("Disassembly output unavailable")
+                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { input -> input.copyTo(output) } } ?: throw IllegalStateException("Cannot write destination")
+                disassemblyMessage = "Smali source ZIP exported successfully."
+            } catch (e: Exception) { disassemblyMessage = "Export failed: ${e.message}" }
+        } else disassemblyMessage = "Export cancelled."
     }
     val signedExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri: Uri? ->
         if (uri != null) {
@@ -1086,7 +1138,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
-                WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credential-like strings and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
@@ -1225,6 +1278,25 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Smali DEX disassembly") {
+                                Button(onClick = {
+                                    installScope.launch {
+                                        disassemblyRunning = true
+                                        disassemblyMessage = "Disassembling DEX files. Large apps may take time…"
+                                        try {
+                                            val result = withContext(Dispatchers.IO) { disassembleApkToSmali(app.apkPath, context.cacheDir) }
+                                            disassemblyOutputPath = result.absolutePath
+                                            disassemblyMessage = "Disassembly complete: " + result.length() / 1024 + " KB ZIP"
+                                        } catch (e: Exception) { disassemblyMessage = "Disassembly failed: ${e.message ?: e.javaClass.simpleName}" }
+                                        disassemblyRunning = false
+                                    }
+                                }, enabled = !disassemblyRunning && !app.apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                    Text(if (disassemblyRunning) "Disassembling…" else "Disassemble DEX to Smali")
+                                }
+                                if (disassemblyOutputPath != null) Button(onClick = { disassemblyExportLauncher.launch(app.pkg.substringAfterLast(".") + "-smali-source.zip") }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Export Smali source ZIP") }
+                                if (disassemblyMessage.isNotBlank()) Text(disassemblyMessage, color = if (disassemblyMessage.startsWith("Disassembly complete") || disassemblyMessage.startsWith("Smali source ZIP")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("Safety limits: maximum 12 DEX files, 16 MB per DEX and 48 MB combined. Output is Smali assembly, not decompiled Java source. Test only APKs you own or are authorized to assess.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Sign APK") {
                                 Button(onClick = { signApkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Choose APK to sign") }
