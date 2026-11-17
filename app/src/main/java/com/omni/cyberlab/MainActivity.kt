@@ -65,7 +65,6 @@ import rikka.shizuku.Shizuku
 import java.security.MessageDigest
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
-import java.security.cert.X509Certificate
 
 private val Bg = Color(0xFF08111F)
 private val CardBg = Color(0xFF111F32)
@@ -1266,6 +1265,15 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = !signingRunning && signingInputPath != null && signingKeyPath != null && storePassword.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text(if (signingRunning) "Signing…" else "Sign APK with my keystore") }
                                 if (signedOutputPath != null) Button(onClick = { signedExportLauncher.launch("signed-" + app.pkg.substringAfterLast(".") + ".apk") }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Export signed APK") }
+                                if (signedOutputPath != null) OutlinedButton(onClick = {
+                                    try {
+                                        val signedFile = File(signedOutputPath!!)
+                                        val signedUri = FileProvider.getUriForFile(context, context.packageName + ".files", signedFile)
+                                        val installIntent = Intent(Intent.ACTION_VIEW).apply { setDataAndType(signedUri, "application/vnd.android.package-archive"); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                                        installLauncher.launch(installIntent)
+                                        signingMessage = "Android installer opened. Confirm installation on the system screen."
+                                    } catch (e: Exception) { signingMessage = "Could not open installer: ${e.message}" }
+                                }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Install signed APK") }
                                 if (signingMessage.isNotBlank()) Text(signingMessage, color = if (signingMessage.startsWith("APK signed")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                                 Text("Use only a keystore you own or are authorized to use. Signing does not decompile or rebuild code. If the signing certificate changes, Android will not install it as an update over an app signed by a different key.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
