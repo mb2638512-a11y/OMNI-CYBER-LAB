@@ -1,34 +1,65 @@
 # OMNI CYBER LAB
-Native Android defensive security-audit companion using Kotlin and Jetpack Compose.
 
-## Implemented foundation
-- Installed-package inventory and search.
-- App version, requested permissions, exported component counts, debuggable flag and signer SHA-256.
-- Optional Shizuku bridge with explicit user permission.
-- Allowlisted read-only shell diagnostics: third-party package listing, Android release, SDK level and shell identity.
-- Offline local inventory.
-- GitHub Actions builds a debug APK and uploads it as an artifact.
+Native Android defensive security-audit companion built with Kotlin and Jetpack Compose. Designed for local inspection of installed apps and APK files, with optional Shizuku-assisted read-only diagnostics.
+
+## Implemented capabilities
+
+### Device and installed-app inventory
+- Installed-app inventory with launcher labels/icons, package IDs, version details, search, filters and app workspace navigation.
+- Requested permission inventory and runtime permission grant state where Android exposes it.
+- Exported Activity, Service, Receiver and Provider inventory, declared component permissions, debuggable state, backup/cleartext manifest flags and signing-certificate SHA-256.
+- App launch and Android App Info settings shortcuts.
+- Storage footprint lookup through Android Usage Access when the user grants it.
+
+### APK inspection and engineering workflow
+- Import an APK through Android's document picker and inspect metadata without installing or executing it.
+- APK ZIP inventory: DEX files, native libraries, resource folder entries, assets, network security config and META-INF markers.
+- Bounded DEX printable-string triage for selected API/behavior markers, URLs, credential-like patterns and common billing/ads/analytics SDK references.
+- Smali disassembly export and bounded Smali-to-DEX rebuild workflow.
+- APK signing with a user-provided JKS/PKCS12 keystore using Android apksig.
+- Static comparison of two APKs: package/version, signer, permissions, exported components and file hash.
+- APK set backup ZIP with per-file SHA-256, archive readability, manifest presence, DEX/native-library counts, package/version and signer consistency notes.
+
+### Install and restore
+- Single APK install/update through Android's system Package Installer.
+- Multi-APK split installation through Android PackageInstaller sessions when the complete base + split set is available.
+- Split-set validation checks package identity, exactly one base APK, duplicate split names, matching version codes and matching signing certificates before a session is created.
+- Android system confirmation and installer policy remain in control. The app does not silently install packages or bypass security prompts.
+
+### Network and runtime diagnostics
+- Manual HTTPS endpoint check for TLS protocol/cipher, peer certificate validity and selected response security headers.
+- Optional Shizuku package diagnostics and bounded log snapshot for an app process, with common sensitive log patterns redacted.
+- Manual billing sandbox, network, offline behavior and privacy review checklists.
 
 ## Build
-Open in Android Studio with JDK 17, sync Gradle, connect a phone and press Run. Or open the Actions tab and download the APK artifact after a successful workflow.
+
+Open the project in Android Studio with JDK 17, sync Gradle, connect a device and press Run. GitHub Actions runs the Android build and release workflows. Use the Actions page to inspect the exact commit and download artifacts when available.
 
 ## Shizuku setup
+
 1. Install Shizuku from https://shizuku.rikka.app/.
 2. Enable Developer options and Wireless debugging.
-3. Follow Shizuku pairing instructions and start its service.
-4. Open this app, tap Grant / Check and approve permission.
-5. Run an allowlisted read-only diagnostic.
+3. Follow Shizuku's pairing instructions and start its service.
+4. Open OMNI CYBER LAB, tap Grant / Check and approve permission.
+5. Run an explicitly authorized diagnostic.
 
-On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. This app does not implement a standalone USB ADB host client; computer-side ADB uses Android Platform Tools separately.
+On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shizuku shell privileges are not equivalent to root and do not grant access to other apps' private data directories.
 
-## Additional APK analysis
-- Bounded DEX string triage for selected behavior/API markers, URLs, credential-like strings and common SDK references.
-- Resource ZIP inventory for drawable/mipmap, layout, values, raw resources and assets.
-- Basic UTF-8/UTF-16 raw-string scan of AndroidManifest.xml; this is not full binary AXML decoding or resource resolution.
+## Important limitations
 
-## Limitations and safe use
-Use only on devices, apps, networks and backend environments you own or are explicitly authorized to assess. Android sandboxing prevents reading other apps' private files, credentials, protected memory or hidden traffic. Exported components and permissions are review signals, not proof of vulnerabilities. No payment bypass, malware execution, Wi-Fi attack or unauthorized endpoint testing is included. Dynamic testing needs an owned app and dedicated test environment.
+- APK archive inventory and DEX string scans are static indicators, not a malware verdict or proof that an app is safe.
+- Android's PackageManager metadata is used for manifest-derived permissions and components. Complete binary AXML decoding, resource-table resolution and editable resource rebuild are not yet implemented.
+- Smali output is bytecode disassembly, not Java/Kotlin source reconstruction. Rebuild changes DEX code only; it does not rebuild edited resources or binary manifests.
+- Native library behavior, encrypted/obfuscated strings and runtime code paths are not comprehensively analyzed.
+- HTTPS endpoint audit checks one manually supplied HTTPS URL. It does not crawl an app, intercept all device traffic, bypass TLS pinning or test authentication.
+- Log snapshots are bounded and may omit short-lived or inaccessible log records. Shizuku API compatibility can vary by version.
+- Split restore requires a complete, compatible APK set and a matching signer/version. It does not restore private app data or guarantee compatibility with every OEM installer.
+- Android controls package installation, user confirmation and uninstall permissions.
+- Billing checklist items are manual test plans. The app does not unlock paid features, bypass license checks or verify real payment receipts.
+- `QUERY_ALL_PACKAGES` is restricted by Google Play policy. Broad package visibility must be core functionality and may require policy approval; internal testing/sideloading is the initial target.
 
-QUERY_ALL_PACKAGES is restricted by Google Play policy. Broad visibility must be core functionality and may require policy approval; initial use is intended for internal testing/sideloading.
+## Authorized use
 
-This repository contains source. An APK is only considered built after the Actions workflow succeeds.
+Use only on devices, apps, networks and backend environments you own or are explicitly authorized to assess. No payment bypass, credential theft, malware execution, Wi-Fi attack or unauthorized endpoint testing is included.
+
+This repository contains source code. A build is considered successful only when the matching GitHub Actions workflow reports success.
