@@ -1481,7 +1481,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Runtime log snapshot", "Capture recent process log entries via Shizuku after launching the app; common secret fields are redacted.", if (shizukuReady) "READY • SHIZUKU" else "SHIZUKU REQUIRED", installed),
-                WorkspaceFeature("Static behavior indicators", "Review sampled DEX strings for dynamic loading, process execution, accessibility, screen capture and network indicators. This is triage, not a malware verdict.", if (app.archiveInventory.isEmpty()) "APK REQUIRED" else "STATIC TRIAGE", app.archiveInventory.isNotEmpty())
+                WorkspaceFeature("Static behavior indicators", "Review sampled DEX strings for dynamic loading, process execution, accessibility, screen capture and network indicators. This is triage, not a malware verdict.", if (app.archiveInventory.isEmpty()) "APK REQUIRED" else "STATIC TRIAGE", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("Embedded network endpoints", "List hostnames found in sampled APK text and DEX URL strings; these are static indicators, not proof of active connections.", if (app.archiveInventory.any { it.startsWith("ENDPOINT HOST") }) "HOSTS FOUND" else if (app.archiveInventory.isEmpty()) "APK REQUIRED" else "NO STRING MATCH", app.archiveInventory.isNotEmpty())
             )),
             WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
                 WorkspaceFeature("Permission inventory", "View every permission declared by this app.", "${app.permissions.size} FOUND", true),
@@ -1854,6 +1855,13 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Text(comparisonMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 9.dp))
                                 }
                                 Text("Comparison is static metadata only. It does not run either APK or prove that one build is safe.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Embedded network endpoints") {
+                                val hosts = app.archiveInventory.filter { it.startsWith("ENDPOINT HOST •") }
+                                Text("STATIC HOSTNAME INVENTORY • ${hosts.size}", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                if (hosts.isEmpty()) Text("No hostnames matched the bounded text/DEX scan. This does not prove the app makes no network connections.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+                                else hosts.forEach { Text("• ${it.substringAfter("ENDPOINT HOST • ")}", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
+                                Text("Hostnames are extracted from embedded strings only. Runtime traffic, encrypted endpoints, dynamically generated URLs and native-code networking may not appear here.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Binary manifest & XML decode") {
                                 Button(
