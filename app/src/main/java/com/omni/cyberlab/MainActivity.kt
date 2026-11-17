@@ -755,7 +755,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Export audit summary" -> listOf("Audit report assembled from current static inventory.", "Use Share audit report or Save PDF report to export it.")
         "Open app" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK is not installed." else "Use Launch app to open the installed app.")
         "Open system app settings" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK has no Android settings page on this device." else "Use Open Android app settings to view system controls.")
-        "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result."),
+        "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result.")
         "Create APK backup" -> listOf("Export a copy of the available APK source using Android document picker.", "Split APK applications may need a complete package set; this exports only the selected base APK.")
         else -> listOf("Automated test engine is not implemented for this feature yet.", "No test was run and no pass/fail result is claimed.")
     }
