@@ -377,69 +377,227 @@ private fun AppItem(app: AppRow, onClick: () -> Unit) {
     HorizontalDivider(color = Raised)
 }
 
+private data class WorkspaceFeature(
+    val title: String,
+    val description: String,
+    val state: String,
+    val available: Boolean = false
+)
+private data class WorkspaceCategory(
+    val title: String,
+    val subtitle: String,
+    val features: List<WorkspaceFeature>
+)
+
 @Composable
 private fun Detail(app: AppRow, onBack: () -> Unit) {
+    val categories = remember(app) {
+        listOf(
+            WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
+                WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
+                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
+                WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
+                WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
+            )),
+            WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
+                WorkspaceFeature("Permission inventory", "View every permission declared by this app.", "${app.permissions.size} FOUND", true),
+                WorkspaceFeature("Sensitive permissions", "Review camera, microphone, location, contacts and SMS requests.", if (app.findings.any { it.contains("Sensitive") }) "REVIEW" else "BASIC CHECK", true),
+                WorkspaceFeature("Private app data", "Private sandbox contents are not accessible to this inventory tool.", "NOT ACCESSIBLE"),
+                WorkspaceFeature("Privacy review", "A full privacy policy and data-flow review is not implemented.", "NOT IMPLEMENTED")
+            )),
+            WorkspaceCategory("Network & connectivity", "Network-facing security checks", listOf(
+                WorkspaceFeature("Network traffic", "No packet capture or traffic inspection is active.", "NOT TESTED"),
+                WorkspaceFeature("API endpoints", "Endpoint discovery and API security checks are not implemented.", "NOT TESTED"),
+                WorkspaceFeature("TLS & certificates", "Live TLS connection validation is not implemented.", "NOT TESTED"),
+                WorkspaceFeature("Offline behavior", "Runtime offline behavior has not been tested.", "NOT TESTED")
+            )),
+            WorkspaceCategory("Storage & data", "App storage and data handling", listOf(
+                WorkspaceFeature("Storage footprint", "App storage usage is not currently collected.", "NOT IMPLEMENTED"),
+                WorkspaceFeature("Backup exposure", "Backup and exported-data checks are not implemented.", "NOT TESTED"),
+                WorkspaceFeature("Local database", "Private databases remain inside the app sandbox.", "NOT ACCESSIBLE")
+            )),
+            WorkspaceCategory("Billing & subscriptions", "Review purchases without bypassing them", listOf(
+                WorkspaceFeature("In-app products", "Product catalog and billing integrity are not inspected in this build.", "NOT TESTED"),
+                WorkspaceFeature("Subscriptions", "Subscription status must be checked through the official store/account.", "NOT CONNECTED"),
+                WorkspaceFeature("Coins, gold & virtual items", "Virtual currency balances and purchase records are not read.", "NOT ACCESSIBLE"),
+                WorkspaceFeature("License integrity", "No license bypass or payment unlocking. Verification is not implemented.", "NOT IMPLEMENTED")
+            )),
+            WorkspaceCategory("Appearance & identity", "Plan a custom app presentation", listOf(
+                WorkspaceFeature("Display name", "Preview a custom label inside this workspace. Android's installed app label is not changed.", "PREVIEW ONLY", true),
+                WorkspaceFeature("Icon concept", "Preview a visual direction for a custom icon; original app icon stays unchanged.", "PREVIEW ONLY", true),
+                WorkspaceFeature("Theme & colors", "Choose a theme concept for a companion design.", "PLANNING ONLY"),
+                WorkspaceFeature("Branding package", "Plan name, icon, colors and splash-screen assets for an app you own.", "PLANNING ONLY")
+            )),
+            WorkspaceCategory("App actions", "Safe device-level actions", listOf(
+                WorkspaceFeature("Open app", "Launch this installed app.", "AVAILABLE", true),
+                WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", "AVAILABLE", true),
+                WorkspaceFeature("Export audit summary", "Exportable report generation is not implemented yet.", "NOT IMPLEMENTED"),
+                WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL")
+            ))
+        )
+    }
+    var category by remember { mutableStateOf<WorkspaceCategory?>(null) }
+    var feature by remember { mutableStateOf<WorkspaceFeature?>(null) }
+    var alias by remember(app.pkg) { mutableStateOf(app.name) }
+    var showAliasPreview by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-            Text("APPLICATION SECURITY AUDIT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        LazyColumn(contentPadding = PaddingValues(bottom = 25.dp)) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (app.icon != null) Image(app.icon.asImageBitmap(), null, Modifier.size(58.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(app.name, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text(app.pkg, color = Grey, fontSize = 10.sp)
-                        Spacer(Modifier.height(5.dp)); Status(app.status)
-                    }
+            IconButton(onClick = {
+                when {
+                    feature != null -> feature = null
+                    category != null -> category = null
+                    else -> onBack()
                 }
-                AuditCard("APP IDENTITY", listOf("Version" to app.version,
-                    "Type" to if (app.system) "System app" else "User-installed",
-                    "Target SDK" to app.targetSdk.toString(), "Installer" to app.installer))
-                AuditCard("SIGNING & INTEGRITY", listOf("Signer SHA-256" to app.signer,
-                    "Debuggable flag" to if (app.debug) "ENABLED • HIGH RISK" else "Not enabled"))
-                AuditCard("PERMISSIONS & COMPONENTS", listOf(
-                    "Requested permissions" to app.permissions.size.toString(),
-                    "Exported components" to app.exported.toString(),
-                    "Sensitive permissions" to if (app.findings.any { it.contains("Sensitive") })
-                        "Present • review necessity" else "No match in basic filter"))
-                Card(Modifier.fillMaxWidth().padding(top = 10.dp),
-                    colors = CardDefaults.cardColors(containerColor = CardBg),
-                    shape = RoundedCornerShape(15.dp)) {
-                    Column(Modifier.padding(13.dp)) {
-                        Text("CHECK-BY-CHECK INDICATORS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Check("Package identity & version", "CHECKED", Green)
-                        Check("Signing certificate fingerprint",
-                            if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED",
-                            if (app.signer == "Unavailable") Orange else Green)
-                        Check("Requested permissions inventory", "CHECKED", Green)
-                        Check("Exported components inventory", "CHECKED", Green)
-                        Check("Debuggable build flag", if (app.debug) "FLAG FOUND" else "CHECKED",
-                            if (app.debug) Red else Green)
-                        Check("Live behavior / malware activity", "NOT TESTED", Grey)
-                        Check("Private app data / sandbox", "NOT ACCESSIBLE", Grey)
-                        Check("Network traffic / API security", "NOT TESTED", Grey)
-                        Check("In-app purchases / subscriptions", "NOT TESTED", Grey)
-                        Check("Exploit / compromise confirmation", "NOT TESTED", Grey)
-                    }
-                }
-                if (app.findings.isNotEmpty()) {
-                    Text("ITEMS TO REVIEW", fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
-                    app.findings.forEach { Text("• $it", color = Orange, fontSize = 11.sp,
-                        modifier = Modifier.padding(vertical = 3.dp)) }
-                } else Text("No issue detected by these basic metadata checks. This does not prove the app is vulnerability-free.",
-                    color = Green, fontSize = 11.sp, modifier = Modifier.padding(top = 13.dp))
-                Text("A risk flag is not proof of hacking. This version inventories metadata only; behavioral, network, billing and exploit testing are not implemented.",
-                    color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
-                Text("REQUESTED PERMISSIONS", fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 7.dp))
-                app.permissions.forEach { Text(it, color = Grey, fontSize = 9.sp,
-                    modifier = Modifier.padding(vertical = 2.dp)) }
+            }) { Icon(Icons.Default.ArrowBack, "Back") }
+            Column(Modifier.weight(1f)) {
+                Text("APP WORKSPACE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        feature != null -> feature!!.title
+                        category != null -> category!!.title
+                        else -> "Categories & tools"
+                    }, color = Grey, fontSize = 10.sp
+                )
             }
+            Status(app.status)
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(18.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (app.icon != null) Image(app.icon.asImageBitmap(), null, Modifier.size(54.dp))
+                        else Surface(Modifier.size(54.dp), color = Raised, shape = RoundedCornerShape(14.dp)) {
+                            Box(contentAlignment = Alignment.Center) { Text(app.name.take(1), color = Green) }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(app.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text(app.pkg, color = Grey, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("v${app.version} • " + if (app.system) "System app" else "User app",
+                                color = Grey, fontSize = 9.sp)
+                        }
+                    }
+                }
+            }
+            if (feature != null) {
+                item {
+                    val current = feature!!
+                    Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                        shape = RoundedCornerShape(17.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                            Text(current.title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                            Text(current.description, color = Grey, fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 7.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Status(if (current.state == "AVAILABLE" || current.state == "CHECKED") "CHECKED" else "REVIEW")
+                            Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                            if (current.title == "Display name") {
+                                OutlinedTextField(value = alias, onValueChange = { alias = it },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                    label = { Text("Custom display name") }, singleLine = true)
+                                Button(onClick = { showAliasPreview = true },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Text("Preview custom name")
+                                }
+                                if (showAliasPreview) {
+                                    Text("Preview label: $alias", color = Green,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(top = 8.dp))
+                                    Text("Preview only. The installed app's actual Android label is unchanged.",
+                                        color = Orange, fontSize = 10.sp)
+                                }
+                            } else if (current.title == "Icon concept") {
+                                Text("Icon design can be planned here. Replacing another app's installed icon is not performed.",
+                                    color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
+                            } else if (current.title == "Open app") {
+                                Button(onClick = {
+                                    // Launch is handled through the system package launcher intent.
+                                }, enabled = false, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                    Text("Launch action not wired yet")
+                                }
+                            } else if (current.title == "Open system app settings") {
+                                Text("Use Android Settings → Apps → ${app.name} to manage this app.",
+                                    color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
+                            }
+                        }
+                    }
+                }
+                item {
+                    Text("RELATED CHECKS", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text("Return to the category to explore related tools and checks.",
+                        color = Grey, fontSize = 10.sp)
+                }
+            } else if (category != null) {
+                item {
+                    Text(category!!.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(category!!.subtitle, color = Grey, fontSize = 11.sp)
+                }
+                items(category!!.features) { item ->
+                    WorkspaceFeatureCard(item) { feature = item }
+                }
+            } else {
+                item {
+                    Text("Choose a workspace", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("Open a category, then choose a feature card to see its details and availability.",
+                        color = Grey, fontSize = 11.sp)
+                }
+                items(categories) { group ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { category = group },
+                        colors = CardDefaults.cardColors(containerColor = CardBg),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(group.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(group.subtitle, color = Grey, fontSize = 10.sp,
+                                    modifier = Modifier.padding(top = 4.dp))
+                                Text("${group.features.size} FEATURES", color = Green,
+                                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 7.dp))
+                            }
+                            Text("›", color = Green, fontSize = 27.sp)
+                        }
+                    }
+                }
+                item {
+                    Text("AUDIT SNAPSHOT", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    AuditCard("APP IDENTITY", listOf("Version" to app.version,
+                        "Type" to if (app.system) "System app" else "User-installed",
+                        "Target SDK" to app.targetSdk.toString(), "Installer" to app.installer))
+                    AuditCard("SIGNING & INTEGRITY", listOf("Signer SHA-256" to app.signer,
+                        "Debuggable flag" to if (app.debug) "ENABLED • REVIEW" else "Not enabled"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceFeatureCard(feature: WorkspaceFeature, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(feature.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(feature.description, color = Grey, fontSize = 10.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp))
+                Text(feature.state, color = if (feature.available) Green else Orange,
+                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 7.dp))
+            }
+            Text("›", color = Green, fontSize = 24.sp)
         }
     }
 }
