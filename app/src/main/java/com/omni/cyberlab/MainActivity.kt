@@ -780,6 +780,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         }
         "Signer & integrity" -> listOf("Signer certificate SHA-256: " + app.signer, "APK file SHA-256 is included in the archive inventory.", "Compare the signer fingerprint with a trusted release record; matching signer identity is not a malware verdict.")
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
+        "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -812,18 +813,76 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var pendingPdfText by remember { mutableStateOf("") }
     var installMessage by remember { mutableStateOf("") }
     var backupMessage by remember { mutableStateOf("") }
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri ->
+    var comparisonMessage by remember { mutableStateOf("") }
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
             try {
-                val source = app.apkPath?.let { File(it) } ?: throw IllegalStateException("APK source unavailable")
-                if (!source.isFile) throw IllegalStateException("APK source file not found")
-                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { input -> input.copyTo(output) } }
-                    ?: throw IllegalStateException("Could not open destination")
-                backupMessage = "APK backup exported successfully."
+                val sources = app.apkPaths.ifEmpty { listOfNotNull(app.apkPath) }.map { File(it) }.filter { it.isFile }
+                if (sources.isEmpty()) throw IllegalStateException("No APK source files are available")
+                context.contentResolver.openOutputStream(uri)?.use { raw ->
+                    ZipOutputStream(raw).use { zipOut ->
+                        sources.forEachIndexed { index, source ->
+                            val entryName = if (sources.size == 1) source.name else "apk-set/" + index.toString().padStart(2, '0') + "-" + source.name
+                            zipOut.putNextEntry(ZipEntry(entryName))
+                            source.inputStream().use { input -> input.copyTo(zipOut) }
+                            zipOut.closeEntry()
+                        }
+                    }
+                } ?: throw IllegalStateException("Could not open destination")
+                backupMessage = "APK backup bundle exported: ${sources.size} APK file(s)."
             } catch (e: Exception) { backupMessage = "Backup failed: ${e.message}" }
         } else backupMessage = "Backup cancelled."
     }
     val installScope = rememberCoroutineScope()
+    val comparisonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            installScope.launch {
+                comparisonMessage = "Reading comparison APK…"
+                try {
+                    val report = withContext(Dispatchers.IO) {
+                        val comparisonFile = File(context.cacheDir, "compare-" + System.currentTimeMillis() + ".apk")
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            comparisonFile.outputStream().use { output -> input.copyTo(output) }
+                        } ?: throw IllegalStateException("Could not read selected APK")
+                        val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_ACTIVITIES or
+                            PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or PackageManager.GET_PROVIDERS or
+                            (if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0)
+                        val other = context.packageManager.getPackageArchiveInfo(comparisonFile.absolutePath, flags)
+                            ?: throw IllegalArgumentException("Selected file is not a readable APK")
+                        val otherSigner = if (Build.VERSION.SDK_INT >= 28) {
+                            other.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()?.let { bytes ->
+                                MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(":") { "%02X".format(it) }
+                            } ?: "Unavailable"
+                        } else "Unavailable on this Android version"
+                        val otherPermissions = other.requestedPermissions?.toSet() ?: emptySet()
+                        val currentPermissions = app.permissions.toSet()
+                        val exportedCount = (other.activities?.count { it.exported } ?: 0) +
+                            (other.services?.count { it.exported } ?: 0) +
+                            (other.receivers?.count { it.exported } ?: 0) +
+                            (other.providers?.count { it.exported } ?: 0)
+                        val hash = inspectApkArchive(comparisonFile.absolutePath).firstOrNull { it.startsWith("APK SHA-256:") } ?: "APK hash unavailable"
+                        buildList {
+                            add("Current app: ${app.pkg} • version ${app.version}")
+                            add("Selected APK: ${other.packageName} • version ${other.versionName ?: "Unknown"}")
+                            add("Package identity: " + if (other.packageName == app.pkg) "MATCH" else "DIFFERENT PACKAGE")
+                            add("Signer: " + if (otherSigner == app.signer && otherSigner != "Unavailable") "MATCH" else "DIFFERENT / UNAVAILABLE")
+                            add("Selected signer SHA-256: $otherSigner")
+                            add("New requested permissions: " + (otherPermissions - currentPermissions).size)
+                            (otherPermissions - currentPermissions).sorted().take(30).forEach { add("ADDED PERMISSION • $it") }
+                            add("Removed requested permissions: " + (currentPermissions - otherPermissions).size)
+                            (currentPermissions - otherPermissions).sorted().take(30).forEach { add("REMOVED PERMISSION • $it") }
+                            add("Exported components: current ${app.exported} • selected $exportedCount")
+                            add(hash)
+                            add("Static comparison only; compare official release lineage before replacing an installed app.")
+                        }.joinToString("\n")
+                    }
+                    comparisonMessage = report
+                } catch (e: Exception) {
+                    comparisonMessage = "Comparison failed: ${e.message ?: e.javaClass.simpleName}"
+                }
+            }
+        } else comparisonMessage = "Comparison cancelled."
+    }
     val installLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         installMessage = when (result.resultCode) {
             android.app.Activity.RESULT_OK -> "Installer reported success. Refresh the app inventory to confirm."
@@ -916,7 +975,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
-                WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan sampled text assets for exposed credential patterns.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + TEXT SCAN", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credential-like strings and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
@@ -957,7 +1017,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL"),
                 WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank()),
-                WorkspaceFeature("Create APK backup", "Export the available base APK to a location you choose.", if (app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • EXPORT", !app.apkPath.isNullOrBlank())
+                WorkspaceFeature("Create APK backup", "Export the base APK and available split APK files together as a ZIP backup bundle.", if (app.apkPaths.isEmpty() && app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • APK SET", !app.apkPaths.isEmpty() || !app.apkPath.isNullOrBlank())
             ))
         )
     }
@@ -1051,6 +1111,16 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                             }
+                            if (current.title == "Compare APK builds") {
+                                Button(onClick = { comparisonPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text("Choose comparison APK")
+                                }
+                                if (comparisonMessage.isNotBlank()) {
+                                    Text(comparisonMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 9.dp))
+                                }
+                                Text("Comparison is static metadata only. It does not run either APK or prove that one build is safe.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
                             }
@@ -1094,11 +1164,11 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 Text("Android will ask for confirmation. Silent installation and security prompts are not bypassed. A split APK app may require its complete split package set.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
                                 if (installMessage.isNotBlank()) Text(installMessage, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "Create APK backup") {
-                                Button(onClick = { backupLauncher.launch(app.pkg.substringAfterLast(".") + "-" + app.version + ".apk") }, enabled = !app.apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                                    Text("Export APK backup")
+                                Button(onClick = { backupLauncher.launch(app.pkg.substringAfterLast(".") + "-" + app.version + "-apk-set.zip") }, enabled = !app.apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text("Export APK set backup (.zip)")
                                 }
                                 if (backupMessage.isNotBlank()) Text(backupMessage, color = if (backupMessage.startsWith("APK backup exported")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
-                                Text("This copies the available APK file; it does not decrypt app data or guarantee a complete backup for split APK installs.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("Exports available base/split APK files only. It does not back up private app data. Restore of split sets needs a compatible installer or authorized ADB/Shizuku workflow.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "DEX & native libraries") {
                                 Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
