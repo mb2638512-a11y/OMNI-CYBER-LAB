@@ -82,9 +82,14 @@ private fun inspectApkArchive(path: String?): List<String> {
             val dex = entries.filter { it.name.matches(Regex("classes([0-9]*)\\.dex")) }.map { it.name }.sorted()
             val native = entries.filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }.map { it.name }.sorted()
             val networkConfig = entries.filter { it.name.contains("network_security_config", ignoreCase = true) }.map { it.name }
+            val reviewFiles = entries.filter { entry -> listOf(".json", ".properties", ".xml", ".pem", ".cer", ".crt", ".db", ".sqlite").any { entry.name.endsWith(it, ignoreCase = true) } }
+            val totalUncompressed = entries.sumOf { it.size.coerceAtLeast(0L) }
             val multidex = dex.size > 1
             buildList {
                 add("APK entries: ${entries.size}")
+                add("Total uncompressed size: ${totalUncompressed / 1024} KB")
+                add("Review-relevant config/data files: ${reviewFiles.size}")
+                reviewFiles.take(50).forEach { entry -> add("FILE • ${entry.name} • ${entry.size.coerceAtLeast(0L) / 1024} KB") }
                 add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
                 dex.take(20).forEach { add("DEX • $it") }
                 add("Native libraries: ${native.size}")
