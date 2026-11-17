@@ -4,6 +4,8 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 
 ## Implemented capabilities
 
+- Export audit summaries as shareable text and paginated PDF reports, including timestamped manual network/offline/privacy and billing checklist status plus any captured runtime/Shizuku evidence. Long lines are wrapped instead of silently truncated; checked checklist entries are explicitly identified as manual records.
+
 ### Device and installed-app inventory
 - Installed-app inventory with launcher labels/icons, package IDs, version details, search, filters and app workspace navigation.
 - Requested permission inventory and runtime permission grant state where Android exposes it.
