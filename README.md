@@ -31,6 +31,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 ### Network and runtime diagnostics
 - Manual HTTPS endpoint check for TLS protocol/cipher, peer certificate validity and selected response security headers.
 - Optional Shizuku package diagnostics and bounded log snapshot for an app process, with common sensitive log patterns redacted.
+- Categorized runtime log triage for crash/ANR, permission/platform, TLS/network, performance and storage/database indicators, with evidence counts and remediation hints.
 - Manual billing sandbox, network, offline behavior and privacy review checklists.
 
 ## Build
@@ -54,7 +55,7 @@ On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shi
 - Smali output is bytecode disassembly, not Java/Kotlin source reconstruction. Rebuild changes DEX code only; it does not rebuild edited resources or binary manifests.
 - Native library behavior, encrypted/obfuscated strings and runtime code paths are not comprehensively analyzed.
 - HTTPS endpoint audit checks one manually supplied HTTPS URL. It does not crawl an app, intercept all device traffic, bypass TLS pinning or test authentication.
-- Log snapshots are bounded and may omit short-lived or inaccessible log records. Shizuku API compatibility can vary by version.
+- Log snapshots are bounded and may omit short-lived or inaccessible log records. Categorized runtime triage is based only on a one-time 250-line process snapshot; it is not continuous monitoring or a malware verdict. Shizuku API compatibility can vary by version.
 - Split restore requires a complete, compatible APK set and a matching signer/version. It does not restore private app data or guarantee compatibility with every OEM installer.
 - Android controls package installation, user confirmation and uninstall permissions.
 - Billing checklist items are manual test plans. The app does not unlock paid features, bypass license checks or verify real payment receipts.
