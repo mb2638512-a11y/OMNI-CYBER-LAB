@@ -1314,10 +1314,10 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var shizukuRunning by remember { mutableStateOf(false) }
     val checklistPrefs = remember(context, app.pkg) { context.getSharedPreferences("omni_checklists", android.content.Context.MODE_PRIVATE) }
     var billingChecks by remember(app.pkg) {
-        mutableStateOf(checklistPrefs.getStringSet("billing:${app.pkg}", emptySet<String>())?.toSet() ?: emptySet<String>())
+        mutableStateOf<Set<String>>(checklistPrefs.getStringSet("billing:${app.pkg}", emptySet<String>())?.toSet() ?: emptySet<String>())
     }
     var manualChecks by remember(app.pkg) {
-        mutableStateOf(listOf("Network traffic", "Offline behavior", "Privacy review").associateWith { title ->
+        mutableStateOf<Map<String, Set<String>>>(listOf("Network traffic", "Offline behavior", "Privacy review").associateWith { title ->
             checklistPrefs.getStringSet("manual:${app.pkg}:$title", emptySet<String>())?.toSet() ?: emptySet<String>()
         })
     }
