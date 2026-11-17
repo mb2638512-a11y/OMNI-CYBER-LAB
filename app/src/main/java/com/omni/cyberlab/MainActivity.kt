@@ -926,13 +926,35 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                     Text("Return to the category to explore related tools and checks.",
                         color = Grey, fontSize = 10.sp)
                 }
+            } else if (category != null && subcategory != null) {
+                item {
+                    Text(subcategory!!, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(category!!.title + " • selected tools", color = Grey, fontSize = 11.sp)
+                }
+                items(category!!.features.filter { subcategoryFor(category!!.title, it.title) == subcategory }) { item ->
+                    WorkspaceFeatureCard(item) {
+                        feature = item
+                        featureResults = emptyList()
+                    }
+                }
             } else if (category != null) {
                 item {
                     Text(category!!.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text(category!!.subtitle, color = Grey, fontSize = 11.sp)
+                    Text("Choose a subcategory to open its tools.", color = Grey, fontSize = 10.sp)
                 }
-                items(category!!.features) { item ->
-                    WorkspaceFeatureCard(item) { feature = item }
+                items(category!!.features.map { subcategoryFor(category!!.title, it.title) }.distinct()) { group ->
+                    val count = category!!.features.count { subcategoryFor(category!!.title, it.title) == group }
+                    Card(modifier = Modifier.fillMaxWidth().clickable { subcategory = group },
+                        colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(15.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(group, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("$count tools inside", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                            Text("›", color = Green, fontSize = 25.sp)
+                        }
+                    }
                 }
             } else {
                 item {
