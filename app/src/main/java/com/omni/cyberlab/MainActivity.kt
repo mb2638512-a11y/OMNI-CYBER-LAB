@@ -81,6 +81,12 @@ data class AppRow(
 private fun inspectApkArchive(path: String?): List<String> {
     if (path.isNullOrBlank()) return listOf("Archive path unavailable")
     return try {
+        val fileDigest = MessageDigest.getInstance("SHA-256")
+        File(path).inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) { val count = input.read(buffer); if (count <= 0) break; fileDigest.update(buffer, 0, count) }
+        }
+        val apkSha256 = fileDigest.digest().joinToString("") { "%02X".format(it) }
         ZipFile(path).use { zip ->
             val entries = zip.entries().asSequence().toList()
             val dex = entries.filter { it.name.matches(Regex("classes([0-9]*)\\.dex")) }.map { it.name }.sorted()
@@ -137,6 +143,7 @@ private fun inspectApkArchive(path: String?): List<String> {
             }
             val multidex = dex.size > 1
             buildList {
+                add("APK SHA-256: $apkSha256")
                 add("APK entries: ${entries.size}")
                 add("Total uncompressed size: ${totalUncompressed / 1024} KB")
                 add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")
@@ -722,7 +729,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
             if (app.findings.isEmpty()) add("No configured metadata review flags were raised.") else app.findings.forEach { add("Review signal: " + it) }
             add("Static metadata review only; this is not a malware verdict.")
         }
-        "Signer & integrity" -> listOf("SHA-256 signer fingerprint: " + app.signer, "Compare with a trusted release fingerprint before drawing an integrity conclusion.")
+        "Signer & integrity" -> listOf("Signer certificate SHA-256: " + app.signer, "APK file SHA-256 is included in the archive inventory.", "Compare the signer fingerprint with a trusted release record; matching signer identity is not a malware verdict.")
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
@@ -859,7 +866,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
-                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
+                WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan sampled text assets for exposed credential patterns.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + TEXT SCAN", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
@@ -910,6 +917,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var feature by remember { mutableStateOf<WorkspaceFeature?>(null) }
     var featureResults by remember { mutableStateOf(emptyList<String>()) }
     var alias by remember(app.pkg) { mutableStateOf(app.name) }
+    var trustedSigner by remember(app.pkg) { mutableStateOf("") }
+    var signerCheckResult by remember(app.pkg) { mutableStateOf("") }
     var showAliasPreview by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
@@ -976,6 +985,22 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 featureResults.forEach { result ->
                                     Text("• $result", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
                                 }
+                            }
+                            if (current.title == "Signer & integrity") {
+                                Text("CURRENT SIGNER SHA-256", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                                Text(app.signer, color = Grey, fontSize = 9.sp)
+                                OutlinedTextField(value = trustedSigner, onValueChange = { trustedSigner = it }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), label = { Text("Trusted release SHA-256 fingerprint") }, placeholder = { Text("Paste known fingerprint") })
+                                Button(onClick = {
+                                    val expected = trustedSigner.filter { it.isLetterOrDigit() }.uppercase()
+                                    val actual = app.signer.filter { it.isLetterOrDigit() }.uppercase()
+                                    signerCheckResult = when {
+                                        expected.length != 64 -> "Enter a complete 64-character SHA-256 fingerprint."
+                                        app.signer == "Unavailable" -> "Signer fingerprint is unavailable for this package."
+                                        expected == actual -> "MATCH • signer fingerprint matches your trusted value."
+                                        else -> "MISMATCH • signer differs from the trusted value; verify the source and update history."
+                                    }
+                                }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
+                                if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
