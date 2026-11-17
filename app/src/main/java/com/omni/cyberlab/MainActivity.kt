@@ -89,13 +89,17 @@ data class AppRow(
 }
 
 
-private fun buildApkSetManifest(app: AppRow, sources: List<File>): String {
+private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager: PackageManager): String {
     val lines = mutableListOf<String>()
     lines += "OMNI CYBER LAB • APK SET BACKUP REPORT"
     lines += "Expected package: ${app.pkg}"
     lines += "Expected version: ${app.version}"
     lines += "APK files: ${sources.size}"
     lines += ""
+    var baselinePackage: String? = null
+    var baselineVersion: Long? = null
+    var baselineSigner: String? = null
+    var consistencyWarnings = 0
     sources.forEachIndexed { index, file ->
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
@@ -112,12 +116,29 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>): String {
                 "ZIP readable • manifest ${if (hasManifest) "present" else "missing"} • DEX $dexCount • native libs $nativeCount"
             }
         } catch (e: Exception) { "ARCHIVE ERROR • ${e.message ?: "unreadable ZIP"}" }
+        @Suppress("DEPRECATION")
+        val parsed = try { packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES) } catch (_: Exception) { null }
+        val parsedPackage = parsed?.packageName ?: "unparsed"
+        val parsedVersion = parsed?.longVersionCode
+        @Suppress("DEPRECATION")
+        val signer = parsed?.signatures?.firstOrNull()?.toByteArray()?.let { bytes -> MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { b -> "%02X".format(b) } }
+        if (parsed == null) consistencyWarnings++
+        if (baselinePackage == null && parsedPackage != "unparsed") baselinePackage = parsedPackage
+        else if (parsedPackage != "unparsed" && parsedPackage != baselinePackage) consistencyWarnings++
+        if (baselineVersion == null && parsedVersion != null) baselineVersion = parsedVersion
+        else if (parsedVersion != null && parsedVersion != baselineVersion) consistencyWarnings++
+        if (baselineSigner == null && signer != null) baselineSigner = signer
+        else if (signer != null && signer != baselineSigner) consistencyWarnings++
         lines += "[${index + 1}] ${file.name}"
         lines += "Size: ${file.length()} bytes"
         lines += "SHA-256: $hash"
         lines += "Archive: $archiveSummary"
+        lines += "Parsed package: $parsedPackage • version: ${parsed?.versionName ?: "unknown"}"
+        lines += "Signer SHA-256: ${signer ?: "not available"}"
         lines += ""
     }
+    lines += "Package / version / signer consistency warnings: $consistencyWarnings"
+    lines += "Expected package identity: ${if (baselinePackage == app.pkg) "MATCH" else "REVIEW • ${baselinePackage ?: "not parsed"}"}"
     lines += "Files are copied as supplied by Android PackageManager."
     lines += "This ZIP is a backup bundle; it is not a signed installer or a guaranteed restorable split set."
     lines += "Reinstall may require all matching splits and Android's package installer confirmation."
@@ -1115,7 +1136,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             zipOut.closeEntry()
                         }
                         zipOut.putNextEntry(ZipEntry("SET-REPORT.txt"))
-                        zipOut.write(buildApkSetManifest(app, sources).toByteArray(Charsets.UTF_8))
+                        zipOut.write(buildApkSetManifest(app, sources, context.packageManager).toByteArray(Charsets.UTF_8))
                         zipOut.closeEntry()
                     }
                 } ?: throw IllegalStateException("Could not open destination")
