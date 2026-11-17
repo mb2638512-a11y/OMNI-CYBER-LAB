@@ -262,6 +262,43 @@ private fun decodeApkManifestAndResources(path: String?): String {
         "Binary XML decode failed: ${e.message ?: e.javaClass.simpleName}"
     }
 }
+private fun inspectResourceTableLocales(path: String?): String {
+    if (path.isNullOrBlank()) return "APK path unavailable."
+    val file = File(path)
+    if (!file.isFile) return "APK file is no longer available."
+    return try {
+        ApkFile(file).use { apk ->
+            val locales = apk.locales.sortedBy { it.toLanguageTag() }
+            val output = StringBuilder()
+            output.append("RESOURCE TABLE CONFIGURATION INSPECTION\n")
+            output.append("resources.arsc: ").append(if (ZipFile(file).use { it.getEntry("resources.arsc") != null }) "present" else "not found").append("\n")
+            output.append("Locale configurations reported by parser: ").append(locales.size).append("\n")
+            if (locales.isEmpty()) output.append("No locale-specific configurations reported; default resources may still exist.\n")
+            val originalLocale = apk.preferredLocale
+            locales.take(24).forEach { locale ->
+                apk.preferredLocale = locale
+                val manifest = apk.manifestXml ?: ""
+                val appTag = Regex("<application\\b[^>]*>", RegexOption.IGNORE_CASE).find(manifest)?.value.orEmpty()
+                val label = Regex("android:label=[\\\"]([^\\\"]+)[\\\"]", RegexOption.IGNORE_CASE).find(appTag)?.groupValues?.getOrNull(1)
+                output.append("LOCALE • ").append(locale.toLanguageTag()).append(" • application label: ").append(label ?: "not declared/resolved").append("\n")
+            }
+            apk.preferredLocale = originalLocale
+            val valueConfigs = ZipFile(file).use { zip ->
+                zip.entries().asSequence().map { it.name }
+                    .filter { it.startsWith("res/values") && !it.endsWith("/") }
+                    .map { it.substringBeforeLast('/') }
+                    .distinct().sorted().take(80).toList()
+            }
+            output.append("\nRESOURCE VALUE CONFIGURATION DIRECTORIES • ").append(valueConfigs.size).append("\n")
+            valueConfigs.forEach { output.append("CONFIG • ").append(it).append("\n") }
+            output.append("\nThis parses the resource table for supported locales and resolves localized manifest metadata where available. It does not enumerate every resource ID/value or edit/rebuild resources. Resource aliases, overlays, dynamic features and parser limitations may affect resolution.")
+            output.toString().take(18000)
+        }
+    } catch (e: Exception) {
+        "Resource-table inspection failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}"
+    }
+}
+
 private fun inspectApkArchive(path: String?): List<String> {
     if (path.isNullOrBlank()) return listOf("Archive path unavailable")
     return try {
@@ -1519,7 +1556,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
                 WorkspaceFeature("Resource & manifest inventory", "Inventory APK resources and inspect basic raw manifest string markers without modifying the package.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • RESOURCE SCAN", !app.apkPath.isNullOrBlank()),
-                WorkspaceFeature("Binary manifest & XML decode", "Decode Android binary AndroidManifest.xml and sample compiled resource XML into readable text for inspection.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • AXML DECODE", !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Binary manifest & XML decode", "Decode binary XML, inspect resource-table locale configurations and resolve localized manifest labels where available.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • AXML DECODE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Rebuild APK from Smali", "Reassemble edited Smali source into the matching DEX entries and produce an unsigned APK for your own app.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • REBUILD", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
@@ -1933,6 +1970,24 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Text(manifestDecodeReport, color = Grey, fontSize = 9.sp, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
                                 }
                                 Text("This decodes the binary manifest and up to 12 resource XML files for review. It does not edit/rebuild resources or guarantee resolution of every resource reference.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                                var resourceTableReport by remember(app.pkg) { mutableStateOf("") }
+                                var resourceTableRunning by remember { mutableStateOf(false) }
+                                Button(
+                                    onClick = {
+                                        resourceTableRunning = true
+                                        resourceTableReport = "Parsing resources.arsc locale configurations…"
+                                        installScope.launch {
+                                            resourceTableReport = withContext(Dispatchers.IO) { inspectResourceTableLocales(app.apkPath) }
+                                            resourceTableRunning = false
+                                        }
+                                    },
+                                    enabled = !resourceTableRunning && !app.apkPath.isNullOrBlank(),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                                ) { Text(if (resourceTableRunning) "Inspecting resource table…" else "Inspect resource table & locales") }
+                                if (resourceTableReport.isNotBlank()) {
+                                    Text(resourceTableReport, color = Grey, fontSize = 9.sp, modifier = Modifier.fillMaxWidth().padding(top = 9.dp))
+                                }
+
                             }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
