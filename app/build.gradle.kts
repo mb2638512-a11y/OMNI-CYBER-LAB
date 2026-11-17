@@ -34,5 +34,7 @@ dependencies {
  implementation("dev.rikka.shizuku:api:13.1.5")
  implementation("dev.rikka.shizuku:provider:13.1.5")
  implementation("com.android.tools.build:apksig:8.7.3")
+ implementation("org.smali:baksmali:2.5.2")
+ implementation("org.smali:dexlib2:2.5.2")
  debugImplementation("androidx.compose.ui:ui-tooling")
 }
