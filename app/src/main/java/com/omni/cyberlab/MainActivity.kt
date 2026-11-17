@@ -1436,11 +1436,11 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                                     val output = File(context.cacheDir, "signed-" + System.currentTimeMillis() + ".apk")
                                                     ApkSigner.Builder(listOf(config)).setInputApk(input).setOutputApk(output).setV1SigningEnabled(true).setV2SigningEnabled(true).setV3SigningEnabled(true).build().sign()
                                                     output.absolutePath
-                                                } finally { storeChars.fill(0.toChar()); keyChars.fill(0.toChar()) }
+                                                } finally { storeChars.fill(0.toChar()); keyChars.fill(0.toChar()); keyFile.delete() }
                                             }
                                             signingMessage = "APK signed successfully. Export the new file below."
-                                            storePassword = ""; keyPassword = ""
-                                        } catch (e: Exception) { signingMessage = "Signing failed: ${e.message ?: e.javaClass.simpleName}" }
+                                            storePassword = ""; keyPassword = ""; signingKeyPath = null
+                                        } catch (e: Exception) { signingMessage = "Signing failed: ${e.message ?: e.javaClass.simpleName}"; storePassword = ""; keyPassword = ""; signingKeyPath = null }
                                         signingRunning = false
                                     }
                                 }, enabled = !signingRunning && signingInputPath != null && signingKeyPath != null && storePassword.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text(if (signingRunning) "Signing…" else "Sign APK with my keystore") }
