@@ -61,7 +61,7 @@ data class AppRow(
     val name: String, val pkg: String, val version: String, val icon: Bitmap?,
     val permissions: List<String>, val exported: Int, val debug: Boolean,
     val signer: String, val system: Boolean, val targetSdk: Int,
-    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList()
+    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList()
 ) {
     val status: String get() = when {
         debug -> "HIGH RISK"
@@ -94,10 +94,13 @@ class MainActivity : ComponentActivity() {
                     if (permissionFlags and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0) permission else null
                 } ?: emptyList()
                 val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-                val exported = (p.activities?.count { it.exported } ?: 0) +
-                    (p.services?.count { it.exported } ?: 0) +
-                    (p.receivers?.count { it.exported } ?: 0) +
-                    (p.providers?.count { it.exported } ?: 0)
+                val componentDetails = buildList {
+                    p.activities?.filter { it.exported }?.forEach { add("ACTIVITY • ${it.name} • permission=${it.permission ?: "none"}") }
+                    p.services?.filter { it.exported }?.forEach { add("SERVICE • ${it.name} • permission=${it.permission ?: "none"}") }
+                    p.receivers?.filter { it.exported }?.forEach { add("RECEIVER • ${it.name} • permission=${it.permission ?: "none"}") }
+                    p.providers?.filter { it.exported }?.forEach { add("PROVIDER • ${it.name} • permission=${it.readPermission ?: "none"}/${it.writePermission ?: "none"}") }
+                }
+                val exported = componentDetails.size
                 val cert = if (Build.VERSION.SDK_INT >= 28)
                     p.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else null
                 val signer = cert?.let { bytes ->
@@ -122,7 +125,7 @@ class MainActivity : ComponentActivity() {
                     p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
                     perms, exported, debug, signer,
                     ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings, grantedPermissions)
+                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails)
             } catch (_: Exception) { null }
         }.sortedBy { it.name.lowercase() }
     }
@@ -171,10 +174,13 @@ class MainActivity : ComponentActivity() {
                                     ai.publicSourceDir = file.absolutePath
                                     val perms = info.requestedPermissions?.toList() ?: emptyList()
                                     val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-                                    val exported = (info.activities?.count { it.exported } ?: 0) +
-                                        (info.services?.count { it.exported } ?: 0) +
-                                        (info.receivers?.count { it.exported } ?: 0) +
-                                        (info.providers?.count { it.exported } ?: 0)
+                                    val componentDetails = buildList {
+                                        info.activities?.filter { it.exported }?.forEach { add("ACTIVITY • ${it.name} • permission=${it.permission ?: "none"}") }
+                                        info.services?.filter { it.exported }?.forEach { add("SERVICE • ${it.name} • permission=${it.permission ?: "none"}") }
+                                        info.receivers?.filter { it.exported }?.forEach { add("RECEIVER • ${it.name} • permission=${it.permission ?: "none"}") }
+                                        info.providers?.filter { it.exported }?.forEach { add("PROVIDER • ${it.name} • permission=${it.readPermission ?: "none"}/${it.writePermission ?: "none"}") }
+                                    }
+                                    val exported = componentDetails.size
                                     val cert = if (Build.VERSION.SDK_INT >= 28)
                                         info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else null
                                     val signer = cert?.let { bytes ->
@@ -201,7 +207,7 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) { null }
                                     AppRow(pm.getApplicationLabel(ai).toString(), info.packageName,
                                         info.versionName ?: "Unknown", icon, perms, exported, debug,
-                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings)
+                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails)
                                 }
                                 selected = imported
                                 importMessage = "APK metadata loaded. Runtime behavior is not tested."
@@ -549,6 +555,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine("Installer: " + app.installer)
             appendLine("Debuggable: " + app.debug)
             appendLine("Exported components: " + app.exported)
+            appendLine("Exported component inventory:")
+            if (app.exportedComponents.isEmpty()) appendLine("- None reported by package metadata")
+            else app.exportedComponents.forEach { appendLine("- " + it) }
             appendLine("Manifest review signals:")
             val manifestSignals = app.findings.filter { it.contains("backup") || it.contains("Cleartext") }
             if (manifestSignals.isEmpty()) appendLine("- No backup/cleartext metadata flags raised")
@@ -682,7 +691,12 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                            if (current.title == "Permission inventory" || current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
+                            if (current.title == "Debug & exported components") {
+                                Text("${app.exportedComponents.size} exported components found", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                if (app.exportedComponents.isEmpty()) Text("No exported components were reported by package metadata.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+                                else app.exportedComponents.forEach { component -> Text("• $component", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp)) }
+                                Text("Exported does not automatically mean vulnerable. Verify intent filters, caller permissions, input validation and sensitive actions during an authorized runtime test.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            } else if (current.title == "Permission inventory" || current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
                                 val visiblePermissions = if (current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
                                     app.permissions.filter { p -> listOf("CAMERA", "RECORD_AUDIO", "LOCATION", "CONTACTS", "SMS", "PHONE", "CALENDAR", "BODY_SENSORS").any { p.contains(it) } }
                                 } else app.permissions
