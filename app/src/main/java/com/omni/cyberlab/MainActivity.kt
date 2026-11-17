@@ -927,7 +927,7 @@ private data class WorkspaceCategory(
 private fun subcategoryFor(category: String, feature: String): String {
     return when (category) {
         "Security audit" -> when (feature) {
-            "Signer & integrity", "DEX & native libraries" -> "Code & signing"
+            "Signer & integrity", "DEX & native libraries", "Resource & manifest inventory" -> "Code & signing"
             "Debug & exported components", "Cleartext traffic policy", "Malware behavior" -> "Manifest & runtime exposure"
             else -> "Security overview"
         }
@@ -944,6 +944,55 @@ private fun subcategoryFor(category: String, feature: String): String {
     }
 }
 
+private fun inspectResourceInventory(path: String?): List<String> {
+    if (path.isNullOrBlank()) return listOf("APK source unavailable")
+    return try {
+        ZipFile(path).use { zip ->
+            val entries = zip.entries().asSequence().take(2500).toList()
+            val resourceEntries = entries.filter { it.name.startsWith("res/") && !it.isDirectory }
+            val drawable = resourceEntries.count { it.name.startsWith("res/drawable") || it.name.startsWith("res/mipmap") }
+            val layouts = resourceEntries.count { it.name.startsWith("res/layout") }
+            val values = resourceEntries.count { it.name.startsWith("res/values") }
+            val raw = resourceEntries.count { it.name.startsWith("res/raw") }
+            val assets = entries.count { it.name.startsWith("assets/") && !it.isDirectory }
+            val manifest = zip.getEntry("AndroidManifest.xml")
+            val manifestBytes = if (manifest != null && manifest.size in 1..2_000_000) {
+                zip.getInputStream(manifest).use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var remaining = 2_000_000
+                    while (remaining > 0) {
+                        val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                        if (count <= 0) break
+                        output.write(buffer, 0, count)
+                        remaining -= count
+                    }
+                    output.toByteArray()
+                }
+            } else ByteArray(0)
+            val utf8 = manifestBytes.toString(Charsets.UTF_8)
+            val utf16 = String(manifestBytes, Charsets.UTF_16LE)
+            val manifestText = utf8 + " " + utf16
+            val markers = listOf("android:debuggable", "android:allowBackup", "android:usesCleartextTraffic", "android:exported", "android:permission", "android:networkSecurityConfig")
+            val found = markers.filter { manifestText.contains(it, ignoreCase = true) }
+            val sample = resourceEntries.take(18).map { it.name }
+            buildList {
+                add("Resource inventory: " + resourceEntries.size + " file entries sampled from at most 2,500 APK entries")
+                add("Drawable / mipmap resources: " + drawable)
+                add("Layout resources: " + layouts)
+                add("Values resources: " + values)
+                add("Raw resources: " + raw)
+                add("Assets files: " + assets)
+                add("resources.arsc: " + if (zip.getEntry("resources.arsc") != null) "present (binary table not decoded)" else "not found")
+                add("AndroidManifest.xml: " + if (manifestBytes.isNotEmpty()) "present • " + manifestBytes.size + " bytes" else "missing or over 2 MB limit")
+                if (found.isEmpty()) add("Manifest string markers: none found in basic UTF-8/UTF-16 scan") else add("Manifest string markers: " + found.joinToString(", "))
+                if (sample.isNotEmpty()) add("Resource path sample: " + sample.joinToString(" | "))
+                add("Limitations: inventories ZIP paths and searches raw manifest strings; does not decode binary AXML, resolve resource IDs, render layouts or prove runtime behavior.")
+            }
+        }
+    } catch (e: Exception) { listOf("Resource inventory failed: " + (e.message ?: "unknown error")) }
+}
+
 private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String> {
     return when (feature.title) {
         "Security overview" -> buildList {
@@ -954,6 +1003,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         }
         "Signer & integrity" -> listOf("Signer certificate SHA-256: " + app.signer, "APK file SHA-256 is included in the archive inventory.", "Compare the signer fingerprint with a trusted release record; matching signer identity is not a malware verdict.")
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
+        "Resource & manifest inventory" -> inspectResourceInventory(app.apkPath)
         "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
@@ -1235,6 +1285,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
+                WorkspaceFeature("Resource & manifest inventory", "Inventory APK resources and inspect basic raw manifest string markers without modifying the package.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • RESOURCE SCAN", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Rebuild APK from Smali", "Reassemble edited Smali source into the matching DEX entries and produce an unsigned APK for your own app.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • REBUILD", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
