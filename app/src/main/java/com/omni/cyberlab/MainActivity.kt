@@ -1,5 +1,6 @@
 package com.omni.cyberlab
 
+import com.android.apksig.ApkSigner
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
@@ -21,6 +22,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import java.io.File
+import java.io.FileInputStream
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -49,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -844,6 +850,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
         "Compare APK builds" -> listOf("Choose another APK to compare package identity, version, signer fingerprint, requested permissions, exported components and file hash.")
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
+        "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -883,6 +890,14 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var logCaptureRunning by remember { mutableStateOf(false) }
     var shizukuRunning by remember { mutableStateOf(false) }
     var billingChecks by remember(app.pkg) { mutableStateOf(setOf<String>()) }
+    var signingInputPath by remember { mutableStateOf<String?>(null) }
+    var signingKeyPath by remember { mutableStateOf<String?>(null) }
+    var signingAlias by remember { mutableStateOf("") }
+    var storePassword by remember { mutableStateOf("") }
+    var keyPassword by remember { mutableStateOf("") }
+    var signingMessage by remember { mutableStateOf("") }
+    var signedOutputPath by remember { mutableStateOf<String?>(null) }
+    var signingRunning by remember { mutableStateOf(false) }
     var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -952,6 +967,33 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 }
             }
         } else comparisonMessage = "Comparison cancelled."
+    }
+    val signApkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) installScope.launch {
+            try { signingInputPath = withContext(Dispatchers.IO) {
+                val file = File(context.cacheDir, "sign-input-" + System.currentTimeMillis() + ".apk")
+                context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } } ?: throw IllegalStateException("Cannot read selected APK")
+                file.absolutePath
+            }; signingMessage = "Input APK selected." } catch (e: Exception) { signingMessage = "Input selection failed: ${e.message}" }
+        }
+    }
+    val signKeyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) installScope.launch {
+            try { signingKeyPath = withContext(Dispatchers.IO) {
+                val file = File(context.cacheDir, "sign-key-" + System.currentTimeMillis() + ".keystore")
+                context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } } ?: throw IllegalStateException("Cannot read keystore")
+                file.absolutePath
+            }; signingMessage = "Keystore selected. Enter its credentials locally." } catch (e: Exception) { signingMessage = "Keystore selection failed: ${e.message}" }
+        }
+    }
+    val signedExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val source = signedOutputPath?.let { File(it) } ?: throw IllegalStateException("Signed output unavailable")
+                context.contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { input -> input.copyTo(output) } } ?: throw IllegalStateException("Cannot write destination")
+                signingMessage = "Signed APK exported. Verify its signature and package compatibility before installing."
+            } catch (e: Exception) { signingMessage = "Export failed: ${e.message}" }
+        } else signingMessage = "Signed APK export cancelled."
     }
     val installLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         installMessage = when (result.resultCode) {
@@ -1090,7 +1132,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL"),
                 WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank()),
-                WorkspaceFeature("Create APK backup", "Export the base APK and available split APK files together as a ZIP backup bundle.", if (app.apkPaths.isEmpty() && app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • APK SET", !app.apkPaths.isEmpty() || !app.apkPath.isNullOrBlank())
+                WorkspaceFeature("Create APK backup", "Export the base APK and available split APK files together as a ZIP backup bundle.", if (app.apkPaths.isEmpty() && app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • APK SET", !app.apkPaths.isEmpty() || !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Sign APK", "Sign an APK you own or built using your own JKS/PKCS12 keystore. Signing does not modify app code.", "READY • OWN KEYSTORE", true)
             ))
         )
     }
@@ -1183,6 +1226,48 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Sign APK") {
+                                Button(onClick = { signApkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Choose APK to sign") }
+                                Text(if (signingInputPath == null) "No APK selected" else "APK selected: " + File(signingInputPath!!).name, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+                                Button(onClick = { signKeyPicker.launch(arrayOf("application/x-java-keystore", "application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Choose JKS / PKCS12 keystore") }
+                                Text(if (signingKeyPath == null) "No keystore selected" else "Keystore selected: " + File(signingKeyPath!!).name, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+                                OutlinedTextField(value = signingAlias, onValueChange = { signingAlias = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Key alias (blank = first key)") }, singleLine = true)
+                                OutlinedTextField(value = storePassword, onValueChange = { storePassword = it }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp), label = { Text("Keystore password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                                OutlinedTextField(value = keyPassword, onValueChange = { keyPassword = it }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp), label = { Text("Private-key password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                                Button(onClick = {
+                                    installScope.launch {
+                                        signingRunning = true
+                                        signingMessage = "Signing APK locally…"
+                                        try {
+                                            signedOutputPath = withContext(Dispatchers.IO) {
+                                                val input = signingInputPath?.let { File(it) } ?: throw IllegalStateException("Select an APK first")
+                                                val keyFile = signingKeyPath?.let { File(it) } ?: throw IllegalStateException("Select your keystore first")
+                                                if (!input.isFile || !keyFile.isFile) throw IllegalStateException("Selected file is unavailable")
+                                                val storeChars = storePassword.toCharArray()
+                                                val keyChars = (keyPassword.ifBlank { storePassword }).toCharArray()
+                                                try {
+                                                    val type = if (keyFile.extension.lowercase() in listOf("p12", "pfx")) "PKCS12" else "JKS"
+                                                    val keyStore = KeyStore.getInstance(type)
+                                                    FileInputStream(keyFile).use { keyStore.load(it, storeChars) }
+                                                    val alias = signingAlias.ifBlank { keyStore.aliases().toList().firstOrNull { keyStore.isKeyEntry(it) } ?: throw IllegalArgumentException("No private-key entry found in keystore") }
+                                                    val privateKey = keyStore.getKey(alias, keyChars) as? PrivateKey ?: throw IllegalArgumentException("Alias does not contain a private key")
+                                                    val chain = keyStore.getCertificateChain(alias)?.map { it as X509Certificate } ?: listOf(keyStore.getCertificate(alias) as? X509Certificate ?: throw IllegalArgumentException("No X.509 certificate found for alias"))
+                                                    val config = ApkSigner.SignerConfig.Builder(alias, privateKey, chain).build()
+                                                    val output = File(context.cacheDir, "signed-" + System.currentTimeMillis() + ".apk")
+                                                    ApkSigner.Builder(listOf(config)).setInputApk(input).setOutputApk(output).setV1SigningEnabled(true).setV2SigningEnabled(true).setV3SigningEnabled(true).build().sign()
+                                                    output.absolutePath
+                                                } finally { storeChars.fill(0.toChar()); keyChars.fill(0.toChar()) }
+                                            }
+                                            signingMessage = "APK signed successfully. Export the new file below."
+                                            storePassword = ""; keyPassword = ""
+                                        } catch (e: Exception) { signingMessage = "Signing failed: ${e.message ?: e.javaClass.simpleName}" }
+                                        signingRunning = false
+                                    }
+                                }, enabled = !signingRunning && signingInputPath != null && signingKeyPath != null && storePassword.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text(if (signingRunning) "Signing…" else "Sign APK with my keystore") }
+                                if (signedOutputPath != null) Button(onClick = { signedExportLauncher.launch("signed-" + app.pkg.substringAfterLast(".") + ".apk") }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Export signed APK") }
+                                if (signingMessage.isNotBlank()) Text(signingMessage, color = if (signingMessage.startsWith("APK signed")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                Text("Use only a keystore you own or are authorized to use. Signing does not decompile or rebuild code. If the signing certificate changes, Android will not install it as an update over an app signed by a different key.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Billing sandbox checklist") {
                                 val testItems = listOf(
