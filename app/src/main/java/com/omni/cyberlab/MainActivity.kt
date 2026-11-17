@@ -630,6 +630,26 @@ private data class WorkspaceCategory(
     val features: List<WorkspaceFeature>
 )
 
+private fun subcategoryFor(category: String, feature: String): String {
+    return when (category) {
+        "Security audit" -> when (feature) {
+            "Signer & integrity", "DEX & native libraries" -> "Code & signing"
+            "Debug & exported components", "Cleartext traffic policy", "Malware behavior" -> "Manifest & runtime exposure"
+            else -> "Security overview"
+        }
+        "Permissions & privacy" -> if (feature.contains("Permission")) "Permissions" else "Privacy & data access"
+        "Network & connectivity" -> when (feature) {
+            "API endpoints", "TLS & certificates" -> "API & transport security"
+            else -> "Traffic & connectivity"
+        }
+        "Storage & data" -> if (feature.contains("Backup") || feature.contains("database", true)) "Data protection" else "Storage inspection"
+        "Billing & subscriptions" -> if (feature.contains("License")) "Entitlement integrity" else "Purchases & virtual goods"
+        "Appearance & identity" -> if (feature.contains("Icon") || feature.contains("Branding")) "Brand identity" else "Display customization"
+        "App actions" -> if (feature.contains("APK")) "Package installation" else "Device actions & reports"
+        else -> "General"
+    }
+}
+
 @Composable
 private fun Detail(app: AppRow, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -765,7 +785,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         )
     }
     var category by remember { mutableStateOf<WorkspaceCategory?>(null) }
+    var subcategory by remember { mutableStateOf<String?>(null) }
     var feature by remember { mutableStateOf<WorkspaceFeature?>(null) }
+    var featureResults by remember { mutableStateOf(emptyList<String>()) }
     var alias by remember(app.pkg) { mutableStateOf(app.name) }
     var showAliasPreview by remember { mutableStateOf(false) }
 
@@ -774,6 +796,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             IconButton(onClick = {
                 when {
                     feature != null -> feature = null
+                    subcategory != null -> subcategory = null
                     category != null -> category = null
                     else -> onBack()
                 }
@@ -783,6 +806,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 Text(
                     when {
                         feature != null -> feature!!.title
+                        subcategory != null -> subcategory!!
                         category != null -> category!!.title
                         else -> "Categories & tools"
                     }, color = Grey, fontSize = 10.sp
