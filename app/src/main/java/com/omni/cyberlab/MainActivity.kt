@@ -235,6 +235,22 @@ class MainActivity : ComponentActivity() {
                         .thenByDescending { it.findings.size }.thenBy { it.name.lowercase() })
                     else list.sortedBy { it.name.lowercase() }
                 }
+                if (showAuthorization) {
+                    AlertDialog(
+                        onDismissRequest = { showAuthorization = false },
+                        title = { Text("Authorized app testing") },
+                        text = { Text("Only choose an APK you own or have explicit permission to assess. This first pass reads package metadata and signing details; it does not install or execute the APK, access private app data, or prove the app is safe.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showAuthorization = false
+                                apkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
+                            }) { Text("I have permission • Choose APK") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showAuthorization = false }) { Text("Cancel") }
+                        }
+                    )
+                }
                 Surface(Modifier.fillMaxSize(), color = Bg) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                         Spacer(Modifier.height(7.dp))
@@ -353,7 +369,21 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             else -> {
-                                Text("Installed applications", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                Text("App testing lab", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 8.dp))
+                                Text("Installed apps or APK files supplied by an authorized owner",
+                                    color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
+                                OutlinedButton(onClick = { showAuthorization = true },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Icon(Icons.Default.Shield, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Test a friend's APK file")
+                                }
+                                if (importMessage.isNotBlank()) {
+                                    Text(importMessage, color = Grey, fontSize = 10.sp,
+                                        modifier = Modifier.padding(bottom = 5.dp))
+                                }
+                                Text("Installed applications", fontSize = 16.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(top = 8.dp))
                                 Text("${shown.size} apps • Tap an app to inspect its metadata",
                                     color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 10.dp))
