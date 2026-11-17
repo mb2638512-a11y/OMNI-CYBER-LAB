@@ -990,6 +990,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var logCaptureRunning by remember { mutableStateOf(false) }
     var shizukuRunning by remember { mutableStateOf(false) }
     var billingChecks by remember(app.pkg) { mutableStateOf(setOf<String>()) }
+    var manualChecks by remember(app.pkg) { mutableStateOf(mapOf<String, Set<String>>()) }
     var signingInputPath by remember { mutableStateOf<String?>(null) }
     var signingKeyPath by remember { mutableStateOf<String?>(null) }
     var signingAlias by remember { mutableStateOf("") }
@@ -1238,13 +1239,13 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Sensitive permissions", "Review camera, microphone, location, contacts and SMS requests.", if (app.findings.any { it.contains("Sensitive") }) "REVIEW" else "BASIC CHECK", true),
                 WorkspaceFeature("Runtime permission grants", "Check declared permissions against Android's current grant state.", if (installed) "LIVE CHECK" else "APK ONLY", installed),
                 WorkspaceFeature("Private app data", "Private sandbox contents are not accessible to this inventory tool.", "NOT ACCESSIBLE"),
-                WorkspaceFeature("Privacy review", "A full privacy policy and data-flow review is not implemented.", "NOT IMPLEMENTED")
+                WorkspaceFeature("Privacy review", "Owner-led data-flow, SDK, retention and disclosure review checklist.", "TEST PLAN READY", true)
             )),
             WorkspaceCategory("Network & connectivity", "Network-facing security checks", listOf(
-                WorkspaceFeature("Network traffic", "No packet capture or traffic inspection is active.", "NOT TESTED"),
+                WorkspaceFeature("Network traffic", "Owner-led network inspection checklist for a debug build and controlled proxy/test environment.", "MANUAL TEST PLAN", true),
                 WorkspaceFeature("API endpoints", "Run a one-request HTTPS endpoint review against a URL supplied by the app owner.", "READY • MANUAL URL", true),
                 WorkspaceFeature("TLS & certificates", "Check TLS negotiation, peer certificate validity and selected response security headers.", "READY • MANUAL URL", true),
-                WorkspaceFeature("Offline behavior", "Runtime offline behavior has not been tested.", "NOT TESTED")
+                WorkspaceFeature("Offline behavior", "Checklist for airplane-mode, retry, queue and recovery testing on an app you own.", "TEST PLAN READY", true)
             )),
             WorkspaceCategory("Storage & data", "App storage and data handling", listOf(
                 WorkspaceFeature("Storage footprint", "Measure installed app APK, data and cache sizes after you grant Android Usage Access.", "REQUIRES USAGE ACCESS", installed),
@@ -1455,6 +1456,47 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) { Text("Install signed APK") }
                                 if (signingMessage.isNotBlank()) Text(signingMessage, color = if (signingMessage.startsWith("APK signed")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                                 Text("Use only a keystore you own or are authorized to use. Signing does not decompile or rebuild code. If the signing certificate changes, Android will not install it as an update over an app signed by a different key.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Network traffic" || current.title == "Offline behavior" || current.title == "Privacy review") {
+                                val planItems = when (current.title) {
+                                    "Network traffic" -> listOf(
+                                        "Use a debug build and a controlled test device/emulator",
+                                        "Capture only test-account traffic through an authorized proxy",
+                                        "Review TLS validation and debug-only certificate trust configuration",
+                                        "Check that tokens, passwords and personal data are not logged",
+                                        "Verify server-side authorization for every sensitive API action",
+                                        "Check redirects, cleartext requests and error responses"
+                                    )
+                                    "Offline behavior" -> listOf(
+                                        "Record baseline behavior while online",
+                                        "Enable airplane mode and relaunch the app",
+                                        "Check cached screens and graceful offline messages",
+                                        "Check queued writes and retry behavior after reconnect",
+                                        "Verify retries do not duplicate payments or transactions",
+                                        "Check expired sessions and stale entitlements while offline"
+                                    )
+                                    else -> listOf(
+                                        "Map each personal-data field collected and its purpose",
+                                        "Inventory analytics, advertising and other third-party SDKs",
+                                        "Verify permission requests are necessary and just-in-time",
+                                        "Review encryption for sensitive local and network data",
+                                        "Document retention, deletion and account-export behavior",
+                                        "Match actual data flows with the app privacy disclosures"
+                                    )
+                                }
+                                val completed = manualChecks[current.title] ?: emptySet()
+                                Text("${completed.size} / ${planItems.size} checklist items completed", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                LinearProgressIndicator(progress = { completed.size.toFloat() / planItems.size.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp), color = Green)
+                                planItems.forEach { item ->
+                                    Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = completed.contains(item), onCheckedChange = { checked ->
+                                            val next = if (checked) completed + item else completed - item
+                                            manualChecks = manualChecks + (current.title to next)
+                                        })
+                                        Text(item, color = Grey, fontSize = 10.sp)
+                                    }
+                                }
+                                Text("These are manual test records, not automatic packet capture, offline simulation or formal privacy certification.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Billing sandbox checklist") {
                                 val testItems = listOf(
