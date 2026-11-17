@@ -33,7 +33,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Manual HTTPS endpoint check for TLS protocol/cipher, peer certificate validity and selected response security headers.
 - Optional Shizuku package diagnostics and bounded log snapshot for an app process, with common sensitive log patterns redacted.
 - Categorized runtime log triage for crash/ANR, permission/platform, TLS/network, performance and storage/database indicators, with evidence counts and remediation hints.
-- Manual billing sandbox, network, offline behavior and privacy review checklists.
+- Manual billing sandbox, network, offline behavior and privacy review checklists. Progress is saved locally per package and survives app restarts; checked items remain manual records, not proof that a test actually passed.
 
 ## Build
 
