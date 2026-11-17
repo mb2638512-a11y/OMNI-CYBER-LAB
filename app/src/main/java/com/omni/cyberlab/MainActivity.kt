@@ -2,6 +2,7 @@ package com.omni.cyberlab
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -60,7 +61,7 @@ data class AppRow(
     val name: String, val pkg: String, val version: String, val icon: Bitmap?,
     val permissions: List<String>, val exported: Int, val debug: Boolean,
     val signer: String, val system: Boolean, val targetSdk: Int,
-    val installer: String, val findings: List<String>
+    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList()
 ) {
     val status: String get() = when {
         debug -> "HIGH RISK"
@@ -88,6 +89,10 @@ class MainActivity : ComponentActivity() {
             try {
                 val ai = p.applicationInfo ?: return@mapNotNull null
                 val perms = p.requestedPermissions?.toList() ?: emptyList()
+                val grantedPermissions = p.requestedPermissions?.mapIndexedNotNull { index, permission ->
+                    val permissionFlags = p.requestedPermissionsFlags?.getOrNull(index) ?: 0
+                    if (permissionFlags and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0) permission else null
+                } ?: emptyList()
                 val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
                 val exported = (p.activities?.count { it.exported } ?: 0) +
                     (p.services?.count { it.exported } ?: 0) +
@@ -117,7 +122,7 @@ class MainActivity : ComponentActivity() {
                     p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
                     perms, exported, debug, signer,
                     ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings)
+                    ai.targetSdkVersion, installer, findings, grantedPermissions)
             } catch (_: Exception) { null }
         }.sortedBy { it.name.lowercase() }
     }
@@ -683,7 +688,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                         color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
                                 } else {
                                     visiblePermissions.forEach { permission ->
-                                        val isGranted = installed && context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+                                        val isGranted = installed && app.grantedPermissions.contains(permission)
                                         val line = if (current.title == "Runtime permission grants" && installed)
                                             (if (isGranted) "GRANTED • " else "NOT GRANTED • ") + permission else permission
                                         Text("• $line", color = if (current.title == "Runtime permission grants" && isGranted) Green else Grey,
