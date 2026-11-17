@@ -23,6 +23,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 ### Install and restore
 - Single APK install/update through Android's system Package Installer.
 - Multi-APK split installation through Android PackageInstaller sessions when the complete base + split set is available.
+- Split install preflight checks enforce one base APK, unique split names, matching package IDs, version codes and signing-certificate fingerprints.
 - Split-set validation checks package identity, exactly one base APK, duplicate split names, matching version codes and matching signing certificates before a session is created.
 - Android system confirmation and installer policy remain in control. The app does not silently install packages or bypass security prompts.
 
@@ -48,7 +49,7 @@ On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shi
 ## Important limitations
 
 - APK archive inventory and DEX string scans are static indicators, not a malware verdict or proof that an app is safe.
-- Android's PackageManager metadata is used for manifest-derived permissions and components. Complete binary AXML decoding, resource-table resolution and editable resource rebuild are not yet implemented.
+- Binary manifest and selected compiled XML files are decoded for review. Complete resource-table resolution and editable resource rebuild are not yet implemented.
 - Smali output is bytecode disassembly, not Java/Kotlin source reconstruction. Rebuild changes DEX code only; it does not rebuild edited resources or binary manifests.
 - Native library behavior, encrypted/obfuscated strings and runtime code paths are not comprehensively analyzed.
 - HTTPS endpoint audit checks one manually supplied HTTPS URL. It does not crawl an app, intercept all device traffic, bypass TLS pinning or test authentication.
