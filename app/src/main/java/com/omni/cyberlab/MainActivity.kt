@@ -18,6 +18,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import java.io.File
 import java.util.zip.ZipFile
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -68,7 +70,7 @@ data class AppRow(
     val name: String, val pkg: String, val version: String, val icon: Bitmap?,
     val permissions: List<String>, val exported: Int, val debug: Boolean,
     val signer: String, val system: Boolean, val targetSdk: Int,
-    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList(), val archiveInventory: List<String> = emptyList(), val apkPath: String? = null
+    val installer: String, val findings: List<String>, val grantedPermissions: List<String> = emptyList(), val exportedComponents: List<String> = emptyList(), val archiveInventory: List<String> = emptyList(), val apkPath: String? = null, val apkPaths: List<String> = emptyList()
 ) {
     val status: String get() = when {
         debug -> "HIGH RISK"
@@ -141,6 +143,46 @@ private fun inspectApkArchive(path: String?): List<String> {
                     }
                 } catch (_: Exception) { }
             }
+            val dexSignals = mutableListOf<String>()
+            var dexBytesScanned = 0L
+            val sensitiveDexPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}""")
+            val urlPattern = Regex("""https?://[^\s"'<>]{8,}""")
+            val behaviorMarkers = listOf(
+                "Runtime.getRuntime", "ProcessBuilder", "DexClassLoader", "PathClassLoader",
+                "AccessibilityService", "MediaProjection", "SmsManager", "DevicePolicyManager",
+                "addJavascriptInterface", "setJavaScriptEnabled", "requestInstallPackages"
+            )
+            dex.take(12).forEach { dexEntry ->
+                if (dexBytesScanned >= 12L * 1024L * 1024L) return@forEach
+                try {
+                    val maxRead = (12L * 1024L * 1024L - dexBytesScanned).coerceAtMost(2L * 1024L * 1024L).toInt()
+                    val dexFile = zip.getEntry(dexEntry) ?: return@forEach
+                    val bytes = zip.getInputStream(dexFile).use { input ->
+                        val out = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var remaining = maxRead
+                        while (remaining > 0) {
+                            val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                            if (count <= 0) break
+                            out.write(buffer, 0, count)
+                            remaining -= count
+                        }
+                        out.toByteArray()
+                    }
+                    dexBytesScanned += bytes.size
+                    val printable = bytes.toString(Charsets.ISO_8859_1)
+                    sensitiveDexPattern.findAll(printable).take(8).forEach {
+                        dexSignals.add("Possible credential-like DEX string • value redacted • $dexEntry")
+                    }
+                    urlPattern.findAll(printable).take(12).forEach { match ->
+                        val safeHost = try { URI(match.value).host ?: "unparsed host" } catch (_: Exception) { "unparsed host" }
+                        dexSignals.add("Embedded URL string • $safeHost • $dexEntry")
+                    }
+                    behaviorMarkers.filter { printable.contains(it, true) }.forEach {
+                        dexSignals.add("Behavior/API marker • $it • $dexEntry")
+                    }
+                } catch (_: Exception) { }
+            }
             val multidex = dex.size > 1
             buildList {
                 add("APK SHA-256: $apkSha256")
@@ -155,6 +197,9 @@ private fun inspectApkArchive(path: String?): List<String> {
                 add("Review-relevant config/data files: ${reviewFiles.size}")
                 reviewFiles.take(50).forEach { entry -> add("FILE • ${entry.name} • ${entry.size.coerceAtLeast(0L) / 1024} KB") }
                 add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
+                add("DEX printable-string scan: ${dexBytesScanned / 1024} KB sampled • ${dexSignals.size} review signals")
+                dexSignals.take(50).forEach { add("DEX REVIEW • $it") }
+                add("DEX scan is string/marker triage, not decompilation or proof of runtime behavior.")
                 dex.take(20).forEach { add("DEX • $it") }
                 add("Native libraries: ${native.size}")
                 native.take(30).forEach { add("NATIVE • $it") }
@@ -295,7 +340,7 @@ class MainActivity : ComponentActivity() {
                     p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
                     perms, exported, debug, signer,
                     ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir), ai.sourceDir)
+                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir), ai.sourceDir, (listOf(ai.sourceDir) + (ai.splitSourceDirs?.toList() ?: emptyList())).distinct())
             } catch (_: Exception) { null }
         }.sortedBy { it.name.lowercase() }
     }
@@ -377,7 +422,7 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) { null }
                                     AppRow(pm.getApplicationLabel(ai).toString(), info.packageName,
                                         info.versionName ?: "Unknown", icon, perms, exported, debug,
-                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails, inspectApkArchive(file.absolutePath), file.absolutePath)
+                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings, emptyList(), componentDetails, inspectApkArchive(file.absolutePath), file.absolutePath, listOf(file.absolutePath))
                                 }
                                 selected = imported
                                 importMessage = "APK metadata loaded. Runtime behavior is not tested."
