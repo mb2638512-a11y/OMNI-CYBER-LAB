@@ -555,7 +555,12 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             else manifestSignals.forEach { appendLine("- " + it) }
             appendLine("Signer SHA-256: " + app.signer)
             appendLine("Requested permissions:")
-            app.permissions.forEach { appendLine("- " + it) }
+            app.permissions.forEach { permission ->
+                val grant = if (installed) {
+                    if (app.grantedPermissions.contains(permission)) "GRANTED" else "NOT GRANTED"
+                } else "NOT AVAILABLE FOR UNINSTALLED APK"
+                appendLine("- " + permission + " [" + grant + "]")
+            }
             appendLine("Review signals:")
             if (app.findings.isEmpty()) appendLine("- No basic metadata flags raised")
             else app.findings.forEach { appendLine("- " + it) }
@@ -673,7 +678,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Text(current.description, color = Grey, fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 7.dp))
                             Spacer(Modifier.height(12.dp))
-                            Status(if (current.state == "AVAILABLE" || current.state == "CHECKED") "CHECKED" else "REVIEW")
+                            Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                             if (current.title == "Permission inventory" || current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
