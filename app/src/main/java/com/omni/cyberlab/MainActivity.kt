@@ -561,14 +561,29 @@ private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<Str
             secretPattern.replace(line) { m -> m.groupValues[1] + m.groupValues[2] + "[REDACTED]" }
                 .let { emailPattern.replace(it, "[EMAIL]") }
         }
-        val indicators = listOf("FATAL EXCEPTION", "SecurityException", "Permission Denial", "SSLHandshakeException", "Cleartext", "StrictMode", "ANR in", "NetworkOnMainThreadException", "SQLiteException")
-        val matches = redacted.filter { line -> indicators.any { line.contains(it, true) } }.take(60)
+        val ruleGroups = listOf(
+            "CRASH / ANR" to listOf("FATAL EXCEPTION", "ANR in", "Process .* has died"),
+            "PERMISSION / PLATFORM" to listOf("SecurityException", "Permission Denial", "not allowed to"),
+            "TLS / NETWORK" to listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor", "Cleartext", "UnknownHostException", "SocketTimeoutException"),
+            "PERFORMANCE" to listOf("StrictMode", "NetworkOnMainThreadException", "Skipped .* frames"),
+            "STORAGE / DATABASE" to listOf("SQLiteException", "FileNotFoundException", "ENOSPC", "No space left")
+        )
+        val matches = redacted.filter { line -> ruleGroups.any { (_, markers) -> markers.any { line.contains(it, true) || runCatching { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(line) }.getOrDefault(false) } } }.take(60)
         buildList {
+            add("RUNTIME LOG TRIAGE • $packageName")
             add("Captured ${rawLines.size} recent process log lines for PID $pid; secrets and email-like values redacted.")
-            add("Potential diagnostic indicators: ${matches.size}")
-            matches.forEach { add(it.take(500)) }
-            if (matches.isEmpty()) add("No configured diagnostic markers found in this snapshot. This is not a malware verdict.")
-            add("Logcat is a short snapshot, not continuous monitoring. Reproduce the app flow before capturing.")
+            add("Matched diagnostic lines: ${matches.size} • maximum 60 displayed")
+            ruleGroups.forEach { (group, markers) ->
+                val count = matches.count { line -> markers.any { line.contains(it, true) || runCatching { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(line) }.getOrDefault(false) } }
+                add("$group • $count")
+            }
+            if (matches.any { it.contains("FATAL EXCEPTION", true) || it.contains("ANR in", true) }) add("PRIORITY: HIGH • reproduce the crash/ANR and inspect the full stack trace in a controlled debug build.")
+            if (matches.any { listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor", "Cleartext").any { marker -> it.contains(marker, true) } }) add("PRIORITY: REVIEW • verify endpoint certificate chain, hostname, trust configuration and cleartext policy; do not disable TLS validation.")
+            if (matches.any { listOf("SecurityException", "Permission Denial").any { marker -> it.contains(marker, true) } }) add("PRIORITY: REVIEW • confirm the required permission is declared, granted and requested at the correct time.")
+            if (matches.any { listOf("SQLiteException", "ENOSPC", "No space left").any { marker -> it.contains(marker, true) } }) add("PRIORITY: REVIEW • inspect database migrations, transaction handling and available storage.")
+            matches.forEach { add("LOG • " + it.take(500)) }
+            if (matches.isEmpty()) add("No configured diagnostic markers found in this snapshot. This is not a clean bill of health or a malware verdict.")
+            add("Evidence is limited to a one-time, 250-line process log snapshot. It is not continuous monitoring; reproduce each test flow before capture.")
         }
     } catch (e: Exception) { listOf("Runtime log capture failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}") }
 }
