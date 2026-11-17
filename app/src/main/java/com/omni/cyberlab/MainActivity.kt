@@ -1,6 +1,7 @@
 package com.omni.cyberlab
 
 import com.android.apksig.ApkSigner
+import net.dongliu.apk.parser.ApkFile
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
@@ -232,6 +233,34 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager
     lines += "This ZIP is a backup bundle; it is not a signed installer or a guaranteed restorable split set."
     lines += "Reinstall may require all matching splits and Android's package installer confirmation."
     return lines.joinToString("\n")
+}
+private fun decodeApkManifestAndResources(path: String?): String {
+    if (path.isNullOrBlank()) return "APK path unavailable."
+    val file = File(path)
+    if (!file.isFile) return "APK file is no longer available."
+    return try {
+        ApkFile(file).use { apk ->
+            val output = StringBuilder()
+            val manifest = apk.manifestXml ?: throw IllegalStateException("Binary AndroidManifest.xml could not be decoded.")
+            output.append("DECODED ANDROID MANIFEST\n")
+            output.append(manifest.take(24000))
+            if (manifest.length > 24000) output.append("\n[Manifest output truncated at 24,000 characters.]")
+            val xmlPaths = ZipFile(file).use { zip ->
+                zip.entries().asSequence().map { it.name }.filter { it.startsWith("res/") && it.endsWith(".xml") }.sorted().take(12).toList()
+            }
+            output.append("\n\nDECODED RESOURCE XML SAMPLES (").append(xmlPaths.size).append(" of up to 12)\n")
+            xmlPaths.forEach { resourcePath ->
+                output.append("\n--- ").append(resourcePath).append(" ---\n")
+                val decoded = apk.transBinaryXml(resourcePath)
+                output.append((decoded ?: "[Could not decode this XML resource.]").take(2200))
+                if ((decoded?.length ?: 0) > 2200) output.append("\n[Resource XML truncated.]")
+                output.append("\n")
+            }
+            output.toString().take(42000)
+        }
+    } catch (e: Exception) {
+        "Binary XML decode failed: ${e.message ?: e.javaClass.simpleName}"
+    }
 }
 private fun inspectApkArchive(path: String?): List<String> {
     if (path.isNullOrBlank()) return listOf("Archive path unavailable")
