@@ -96,7 +96,18 @@ private fun inspectApkArchive(path: String?): List<String> {
                 if (scannedBytes >= 2L * 1024L * 1024L) return@forEach
                 try {
                     val remaining = (2L * 1024L * 1024L - scannedBytes).coerceAtMost(131072L).toInt()
-                    val bytes = zip.getInputStream(entry).use { it.readNBytes(remaining) }
+                    val bytes = zip.getInputStream(entry).use { input ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var left = remaining
+                        while (left > 0) {
+                            val count = input.read(buffer, 0, minOf(buffer.size, left))
+                            if (count <= 0) break
+                            output.write(buffer, 0, count)
+                            left -= count
+                        }
+                        output.toByteArray()
+                    }
                     scannedBytes += bytes.size
                     val content = bytes.toString(Charsets.UTF_8)
                     assignmentPattern.findAll(content).take(4).forEach { match ->
