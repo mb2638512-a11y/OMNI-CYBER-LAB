@@ -96,7 +96,6 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>): String {
     lines += "Expected version: ${app.version}"
     lines += "APK files: ${sources.size}"
     lines += ""
-    var mismatches = 0
     sources.forEachIndexed { index, file ->
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
@@ -104,9 +103,19 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>): String {
             while (true) { val count = input.read(buffer); if (count <= 0) break; digest.update(buffer, 0, count) }
         }
         val hash = digest.digest().joinToString("") { "%02X".format(it) }
+        val archiveSummary = try {
+            ZipFile(file).use { zip ->
+                val names = zip.entries().asSequence().map { it.name }.toList()
+                val hasManifest = names.contains("AndroidManifest.xml")
+                val dexCount = names.count { it.matches(Regex("classes([0-9]*)\\.dex")) }
+                val nativeCount = names.count { it.startsWith("lib/") && it.endsWith(".so") }
+                "ZIP readable • manifest ${if (hasManifest) "present" else "missing"} • DEX $dexCount • native libs $nativeCount"
+            }
+        } catch (e: Exception) { "ARCHIVE ERROR • ${e.message ?: "unreadable ZIP"}" }
         lines += "[${index + 1}] ${file.name}"
         lines += "Size: ${file.length()} bytes"
         lines += "SHA-256: $hash"
+        lines += "Archive: $archiveSummary"
         lines += ""
     }
     lines += "Files are copied as supplied by Android PackageManager."
