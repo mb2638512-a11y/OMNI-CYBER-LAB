@@ -137,8 +137,11 @@ private fun inspectApkArchive(path: String?): List<String> {
                 add("APK entries: ${entries.size}")
                 add("Total uncompressed size: ${totalUncompressed / 1024} KB")
                 add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")
-                add("Network XML review signals: ${networkConfigSignals.size}")\n                networkConfigSignals.take(20).forEach { add("NETWORK REVIEW • $it") }
-                add("Possible credential signals: ${secretSignals.size}")\n                secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }\n                if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")
+                add("Network XML review signals: ${networkConfigSignals.size}")
+                networkConfigSignals.take(20).forEach { add("NETWORK REVIEW • $it") }
+                add("Possible credential signals: ${secretSignals.size}")
+                secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }
+                if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")
                 add("Review-relevant config/data files: ${reviewFiles.size}")
                 reviewFiles.take(50).forEach { entry -> add("FILE • ${entry.name} • ${entry.size.coerceAtLeast(0L) / 1024} KB") }
                 add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
