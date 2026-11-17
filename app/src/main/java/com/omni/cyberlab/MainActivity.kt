@@ -189,20 +189,21 @@ private suspend fun inspectHttpsEndpoint(rawInput: String): List<String> = withC
     if (rawInput.length > 2048) return@withContext listOf("URL is too long.")
     var connection: HttpsURLConnection? = null
     try {
-        connection = uri.toURL().openConnection() as? HttpsURLConnection
+        val conn = uri.toURL().openConnection() as? HttpsURLConnection
             ?: return@withContext listOf("Could not create an HTTPS connection.")
-        connection.instanceFollowRedirects = false
-        connection.requestMethod = "HEAD"
-        connection.connectTimeout = 6000
-        connection.readTimeout = 6000
-        connection.useCaches = false
-        connection.setRequestProperty("User-Agent", "OMNI-CYBER-LAB-Security-Audit/1.0")
-        connection.connect()
+        connection = conn
+        conn.instanceFollowRedirects = false
+        conn.requestMethod = "HEAD"
+        conn.connectTimeout = 6000
+        conn.readTimeout = 6000
+        conn.useCaches = false
+        conn.setRequestProperty("User-Agent", "OMNI-CYBER-LAB-Security-Audit/1.0")
+        conn.connect()
         val results = mutableListOf<String>()
         results.add("Endpoint host: ${uri.host}")
-        results.add("TLS protocol: ${connection.session.protocol}")
-        results.add("Cipher suite: ${connection.cipherSuite}")
-        val cert = connection.serverCertificates.firstOrNull() as? X509Certificate
+        results.add("TLS protocol: ${conn.session.protocol}")
+        results.add("Cipher suite: ${conn.cipherSuite}")
+        val cert = conn.serverCertificates.firstOrNull() as? X509Certificate
         if (cert != null) {
             results.add("Certificate subject: ${cert.subjectX500Principal.name}")
             results.add("Certificate issuer: ${cert.issuerX500Principal.name}")
@@ -210,10 +211,10 @@ private suspend fun inspectHttpsEndpoint(rawInput: String): List<String> = withC
             try { cert.checkValidity(); results.add("Certificate validity: CURRENT") }
             catch (_: Exception) { results.add("Certificate validity: EXPIRED OR NOT YET VALID — investigate") }
         } else results.add("Certificate details unavailable from peer.")
-        val status = connection.responseCode
+        val status = conn.responseCode
         results.add("HTTP response: $status")
         if (status in 300..399) results.add("Redirect returned; it was not followed.")
-        fun header(name: String): String = connection.getHeaderField(name)?.take(300) ?: "MISSING"
+        fun header(name: String): String = conn.getHeaderField(name)?.take(300) ?: "MISSING"
         val hsts = header("Strict-Transport-Security")
         val csp = header("Content-Security-Policy")
         val xcto = header("X-Content-Type-Options")
