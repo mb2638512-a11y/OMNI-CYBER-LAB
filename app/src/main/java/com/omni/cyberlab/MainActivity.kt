@@ -51,6 +51,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.security.MessageDigest
+import java.net.URI
+import javax.net.ssl.HttpsURLConnection
+import java.security.cert.X509Certificate
 
 private val Bg = Color(0xFF08111F)
 private val CardBg = Color(0xFF111F32)
@@ -174,6 +177,59 @@ private fun classifyFinding(finding: String): Pair<String, String> {
         value.contains("signing fingerprint") -> "INFO" to "Confirm signing certificate availability and compare fingerprints against a trusted release record. (MASVS-CODE)"
         else -> "REVIEW" to "Manually validate this signal and document evidence before assigning a vulnerability severity."
     }
+}
+
+private suspend fun inspectHttpsEndpoint(rawInput: String): List<String> = withContext(Dispatchers.IO) {
+    val uri = try { URI(rawInput.trim()) } catch (_: Exception) {
+        return@withContext listOf("Invalid URL format. Enter a complete https:// URL.")
+    }
+    if (!uri.scheme.equals("https", true) || uri.host.isNullOrBlank() || uri.userInfo != null) {
+        return@withContext listOf("Only a valid HTTPS URL without embedded username/password is accepted.")
+    }
+    if (rawInput.length > 2048) return@withContext listOf("URL is too long.")
+    var connection: HttpsURLConnection? = null
+    try {
+        connection = uri.toURL().openConnection() as? HttpsURLConnection
+            ?: return@withContext listOf("Could not create an HTTPS connection.")
+        connection.instanceFollowRedirects = false
+        connection.requestMethod = "HEAD"
+        connection.connectTimeout = 6000
+        connection.readTimeout = 6000
+        connection.useCaches = false
+        connection.setRequestProperty("User-Agent", "OMNI-CYBER-LAB-Security-Audit/1.0")
+        connection.connect()
+        val results = mutableListOf<String>()
+        results.add("Endpoint host: ${uri.host}")
+        results.add("TLS protocol: ${connection.session.protocol}")
+        results.add("Cipher suite: ${connection.cipherSuite}")
+        val cert = connection.serverCertificates.firstOrNull() as? X509Certificate
+        if (cert != null) {
+            results.add("Certificate subject: ${cert.subjectX500Principal.name}")
+            results.add("Certificate issuer: ${cert.issuerX500Principal.name}")
+            results.add("Certificate expires: ${cert.notAfter}")
+            try { cert.checkValidity(); results.add("Certificate validity: CURRENT") }
+            catch (_: Exception) { results.add("Certificate validity: EXPIRED OR NOT YET VALID — investigate") }
+        } else results.add("Certificate details unavailable from peer.")
+        val status = connection.responseCode
+        results.add("HTTP response: $status")
+        if (status in 300..399) results.add("Redirect returned; it was not followed.")
+        fun header(name: String): String = connection.getHeaderField(name)?.take(300) ?: "MISSING"
+        val hsts = header("Strict-Transport-Security")
+        val csp = header("Content-Security-Policy")
+        val xcto = header("X-Content-Type-Options")
+        val xfo = header("X-Frame-Options")
+        results.add("Strict-Transport-Security: $hsts")
+        results.add("Content-Security-Policy: $csp")
+        results.add("X-Content-Type-Options: $xcto")
+        results.add("X-Frame-Options: $xfo")
+        if (hsts == "MISSING") results.add("REVIEW: HSTS header not observed on this response.")
+        if (csp == "MISSING") results.add("REVIEW: CSP header not observed; applicability depends on response content.")
+        if (xcto == "MISSING") results.add("REVIEW: X-Content-Type-Options header not observed.")
+        results.add("Method used: HEAD only • no credentials • no request body • redirects disabled.")
+        results
+    } catch (e: Exception) {
+        listOf("Connection check failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}", "No vulnerability conclusion can be drawn from a failed connection.")
+    } finally { connection?.disconnect() }
 }
 
 class MainActivity : ComponentActivity() {
@@ -673,6 +729,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
             app.exportedComponents.forEach { add(it) }
             add("Exported components need access-control review; exported alone is not proof of vulnerability.")
         }
+        "API endpoints", "TLS & certificates" -> listOf("Enter one HTTPS endpoint you own or are authorized to test.", "The check sends a single HEAD request, does not follow redirects, and does not send credentials or a request body.", "This checks the endpoint response, not every API route used by the app.")
         "Cleartext traffic policy" -> app.findings.filter { it.contains("Cleartext", true) }.ifEmpty { listOf("No cleartext manifest flag was raised. Binary XML and runtime traffic remain untested.") }
         "Permission inventory" -> listOf("Declared permissions: " + app.permissions.size) + app.permissions
         "Sensitive permissions" -> {
@@ -803,8 +860,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             )),
             WorkspaceCategory("Network & connectivity", "Network-facing security checks", listOf(
                 WorkspaceFeature("Network traffic", "No packet capture or traffic inspection is active.", "NOT TESTED"),
-                WorkspaceFeature("API endpoints", "Endpoint discovery and API security checks are not implemented.", "NOT TESTED"),
-                WorkspaceFeature("TLS & certificates", "Live TLS connection validation is not implemented.", "NOT TESTED"),
+                WorkspaceFeature("API endpoints", "Run a one-request HTTPS endpoint review against a URL supplied by the app owner.", "READY • MANUAL URL", true),
+                WorkspaceFeature("TLS & certificates", "Check TLS negotiation, peer certificate validity and selected response security headers.", "READY • MANUAL URL", true),
                 WorkspaceFeature("Offline behavior", "Runtime offline behavior has not been tested.", "NOT TESTED")
             )),
             WorkspaceCategory("Storage & data", "App storage and data handling", listOf(
@@ -904,6 +961,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 featureResults.forEach { result ->
                                     Text("• $result", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
                                 }
+                            }
+                            if (current.title == "API endpoints" || current.title == "TLS & certificates") {
+                                EndpointAuditPanel()
                             }
                             if (current.title == "Install / reinstall APK") {
                                 Button(
@@ -1085,6 +1145,33 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EndpointAuditPanel() {
+    var endpoint by remember { mutableStateOf("https://") }
+    var running by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf(emptyList<String>()) }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text("AUTHORIZED HTTPS ENDPOINT", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text("Enter one endpoint belonging to you or your client. One HEAD request only; redirects are not followed.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+        OutlinedTextField(value = endpoint, onValueChange = { endpoint = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), singleLine = true, label = { Text("https://api.example.com/health") })
+        Button(onClick = {
+            scope.launch {
+                running = true
+                results = inspectHttpsEndpoint(endpoint)
+                running = false
+            }
+        }, enabled = !running && endpoint.trim().startsWith("https://", true), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Text(if (running) "Checking endpoint…" else "Run HTTPS / TLS check")
+        }
+        if (running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp), color = Green)
+        results.forEach { line ->
+            Text("• $line", color = if (line.startsWith("REVIEW")) Orange else Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        Text("Limitations: this does not crawl routes, test authentication, submit forms, exploit the server, or prove the API is secure.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 9.dp))
     }
 }
 
