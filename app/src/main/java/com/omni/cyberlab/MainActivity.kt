@@ -161,6 +161,11 @@ private fun inspectApkArchive(path: String?): List<String> {
                 "AccessibilityService", "MediaProjection", "SmsManager", "DevicePolicyManager",
                 "addJavascriptInterface", "setJavaScriptEnabled", "requestInstallPackages"
             )
+            val sdkMarkers = listOf(
+                "com/android/billingclient", "com/google/android/gms/ads", "com/unity3d/ads",
+                "com/facebook/ads", "com/google/firebase/analytics", "com/google/android/play/core/integrity",
+                "com/google/android/play/core/appupdate", "com/android/vending/licensing"
+            )
             dex.take(12).forEach { dexEntry ->
                 if (dexBytesScanned >= 12L * 1024L * 1024L) return@forEach
                 try {
@@ -189,6 +194,9 @@ private fun inspectApkArchive(path: String?): List<String> {
                     }
                     behaviorMarkers.filter { printable.contains(it, true) }.forEach {
                         dexSignals.add("Behavior/API marker • $it • $dexEntry")
+                    }
+                    sdkMarkers.filter { printable.contains(it, true) }.forEach {
+                        dexSignals.add("SDK marker • $it • $dexEntry")
                     }
                 } catch (_: Exception) { }
             }
@@ -950,6 +958,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Billing sandbox checklist" -> listOf("Checklist for your own app Play Billing test track and license tester accounts.", "This does not access, alter or unlock purchases in another app.")
         "Sign APK" -> listOf("Select an APK and your own JKS/PKCS12 signing keystore.", "The signed output is a new APK. Existing signature is replaced; installed app updates require the same signing identity as the installed build.")
         "Smali DEX disassembly" -> listOf("Extract DEX entries and disassemble them to Smali source using Baksmali.", "This is bytecode disassembly, not Java/Kotlin source reconstruction. Resources and binary AndroidManifest.xml are not decoded here.")
+        "Billing & SDK inventory" -> app.archiveInventory.filter { it.contains("SDK marker") }.ifEmpty { listOf("No configured SDK marker matched the sampled DEX strings. This does not prove the SDK is absent.") }
         "Rebuild APK from Smali" -> listOf("Import the ZIP exported by Smali DEX disassembly after editing its .smali files.", "Matching smali-N folders are assembled into the original DEX entries; old APK signature files are removed. The result is unsigned and must be signed with your own key.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
@@ -1256,6 +1265,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("In-app products", "Review product IDs and test-store configuration for an app you own.", "MANUAL TEST PLAN"),
                 WorkspaceFeature("Billing sandbox checklist", "Run a structured checklist for test purchases, entitlement verification and subscription lifecycle.", "TEST PLAN READY", true),
                 WorkspaceFeature("Subscriptions", "Subscription status must be checked through the official store/account.", "NOT CONNECTED"),
+                WorkspaceFeature("Billing & SDK inventory", "Identify common Play Billing, ads, analytics and Play Integrity SDK references in sampled DEX strings.", if (app.archiveInventory.any { it.contains("SDK marker") }) "SDK MARKERS FOUND" else if (app.archiveInventory.isEmpty()) "DEX UNAVAILABLE" else "NO MATCH IN SAMPLE", !app.archiveInventory.isEmpty()),
                 WorkspaceFeature("Coins, gold & virtual items", "Virtual currency balances and purchase records are not read.", "NOT ACCESSIBLE"),
                 WorkspaceFeature("License integrity", "No license bypass or payment unlocking. Verification is not implemented.", "NOT IMPLEMENTED")
             )),
@@ -1497,6 +1507,13 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }
                                 Text("These are manual test records, not automatic packet capture, offline simulation or formal privacy certification.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Billing & SDK inventory") {
+                                val markers = app.archiveInventory.filter { it.contains("SDK marker") }
+                                Text("${markers.size} SDK references detected in sampled DEX strings", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                if (markers.isEmpty()) Text("No configured marker matched. Obfuscation, dynamic loading and string encryption can hide SDK references.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                                markers.forEach { Text("• " + it.removePrefix("DEX REVIEW • "), color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp)) }
+                                Text("Presence is an indicator only. This does not inspect product IDs, prices, receipts, purchases, subscriptions or entitlement state.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Billing sandbox checklist") {
                                 val testItems = listOf(
