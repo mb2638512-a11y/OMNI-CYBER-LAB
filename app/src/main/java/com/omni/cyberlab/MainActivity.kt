@@ -1312,8 +1312,15 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var runtimeLogReport by remember { mutableStateOf("") }
     var logCaptureRunning by remember { mutableStateOf(false) }
     var shizukuRunning by remember { mutableStateOf(false) }
-    var billingChecks by remember(app.pkg) { mutableStateOf(setOf<String>()) }
-    var manualChecks by remember(app.pkg) { mutableStateOf(mapOf<String, Set<String>>()) }
+    val checklistPrefs = remember(context, app.pkg) { context.getSharedPreferences("omni_checklists", android.content.Context.MODE_PRIVATE) }
+    var billingChecks by remember(app.pkg) {
+        mutableStateOf(checklistPrefs.getStringSet("billing:${app.pkg}", emptySet())?.toSet() ?: emptySet())
+    }
+    var manualChecks by remember(app.pkg) {
+        mutableStateOf(listOf("Network traffic", "Offline behavior", "Privacy review").associateWith { title ->
+            checklistPrefs.getStringSet("manual:${app.pkg}:$title", emptySet())?.toSet() ?: emptySet()
+        })
+    }
     var signingInputPath by remember { mutableStateOf<String?>(null) }
     var signingKeyPath by remember { mutableStateOf<String?>(null) }
     var signingAlias by remember { mutableStateOf("") }
@@ -1825,6 +1832,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                         Checkbox(checked = completed.contains(item), onCheckedChange = { checked ->
                                             val next = if (checked) completed + item else completed - item
                                             manualChecks = manualChecks + (current.title to next)
+                                            checklistPrefs.edit().putStringSet("manual:${app.pkg}:${current.title}", next.toSet()).apply()
                                         })
                                         Text(item, color = Grey, fontSize = 10.sp)
                                     }
@@ -1858,6 +1866,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Checkbox(checked = billingChecks.contains(item), onCheckedChange = { checked ->
                                             billingChecks = if (checked) billingChecks + item else billingChecks - item
+                                            checklistPrefs.edit().putStringSet("billing:${app.pkg}", billingChecks.toSet()).apply()
                                         })
                                         Text(item, color = Grey, fontSize = 10.sp)
                                     }
