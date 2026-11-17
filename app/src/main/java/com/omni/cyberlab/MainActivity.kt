@@ -89,6 +89,31 @@ data class AppRow(
 }
 
 
+private fun buildApkSetManifest(app: AppRow, sources: List<File>): String {
+    val lines = mutableListOf<String>()
+    lines += "OMNI CYBER LAB • APK SET BACKUP REPORT"
+    lines += "Expected package: ${app.pkg}"
+    lines += "Expected version: ${app.version}"
+    lines += "APK files: ${sources.size}"
+    lines += ""
+    var mismatches = 0
+    sources.forEachIndexed { index, file ->
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) { val count = input.read(buffer); if (count <= 0) break; digest.update(buffer, 0, count) }
+        }
+        val hash = digest.digest().joinToString("") { "%02X".format(it) }
+        lines += "[${index + 1}] ${file.name}"
+        lines += "Size: ${file.length()} bytes"
+        lines += "SHA-256: $hash"
+        lines += ""
+    }
+    lines += "Files are copied as supplied by Android PackageManager."
+    lines += "This ZIP is a backup bundle; it is not a signed installer or a guaranteed restorable split set."
+    lines += "Reinstall may require all matching splits and Android's package installer confirmation."
+    return lines.joinToString("\n")
+}
 private fun inspectApkArchive(path: String?): List<String> {
     if (path.isNullOrBlank()) return listOf("Archive path unavailable")
     return try {
@@ -1080,6 +1105,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             source.inputStream().use { input -> input.copyTo(zipOut) }
                             zipOut.closeEntry()
                         }
+                        zipOut.putNextEntry(ZipEntry("SET-REPORT.txt"))
+                        zipOut.write(buildApkSetManifest(app, sources).toByteArray(Charsets.UTF_8))
+                        zipOut.closeEntry()
                     }
                 } ?: throw IllegalStateException("Could not open destination")
                 backupMessage = "APK backup bundle exported: ${sources.size} APK file(s)."
