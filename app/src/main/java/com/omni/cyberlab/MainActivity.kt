@@ -285,6 +285,8 @@ private fun inspectApkArchive(path: String?): List<String> {
             var scannedBytes = 0L
             val secretSignals = mutableListOf<String>()
             val networkConfigSignals = mutableListOf<String>()
+            val embeddedHosts = linkedSetOf<String>()
+            val embeddedUrlPattern = Regex("""https?://[^\\s\"'<>]{8,}""")
             val assignmentPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password|secret)\s*[:=]\s*["']?([A-Za-z0-9_./+=-]{12,})""")
             val awsPattern = Regex("""\bAKIA[0-9A-Z]{16}\b""")
             textCandidates.forEach { entry ->
@@ -305,6 +307,9 @@ private fun inspectApkArchive(path: String?): List<String> {
                     }
                     scannedBytes += bytes.size
                     val content = bytes.toString(Charsets.UTF_8)
+                    embeddedUrlPattern.findAll(content).take(30).forEach { match ->
+                        try { URI(match.value).host?.lowercase()?.let { embeddedHosts.add(it) } } catch (_: Exception) { }
+                    }
                     if (entry.name.contains("network_security_config", ignoreCase = true) || entry.name.endsWith(".xml", ignoreCase = true)) {
                         if (Regex("""(?i)cleartextTrafficPermitted\s*=\s*["']true["']""").containsMatchIn(content)) {
                             networkConfigSignals.add("Cleartext traffic explicitly permitted • ${entry.name}")
@@ -363,6 +368,7 @@ private fun inspectApkArchive(path: String?): List<String> {
                     }
                     urlPattern.findAll(printable).take(12).forEach { match ->
                         val safeHost = try { URI(match.value).host ?: "unparsed host" } catch (_: Exception) { "unparsed host" }
+                        if (safeHost != "unparsed host") embeddedHosts.add(safeHost.lowercase())
                         dexSignals.add("Embedded URL string • $safeHost • $dexEntry")
                     }
                     behaviorMarkers.filter { printable.contains(it, true) }.forEach {
@@ -381,6 +387,8 @@ private fun inspectApkArchive(path: String?): List<String> {
                 add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")
                 add("Network XML review signals: ${networkConfigSignals.size}")
                 networkConfigSignals.take(20).forEach { add("NETWORK REVIEW • $it") }
+                add("Embedded endpoint hostnames: ${embeddedHosts.size} • static string matches only")
+                embeddedHosts.take(40).forEach { add("ENDPOINT HOST • $it") }
                 add("Possible credential signals: ${secretSignals.size}")
                 secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }
                 if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")
