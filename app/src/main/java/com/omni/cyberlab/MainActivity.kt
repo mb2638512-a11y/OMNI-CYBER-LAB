@@ -12,6 +12,10 @@ import android.net.Uri
 import android.content.Intent
 import androidx.core.content.FileProvider
 import android.provider.Settings
+import android.app.AppOpsManager
+import android.app.usage.StorageStatsManager
+import android.os.storage.StorageManager
+import android.os.Process
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
@@ -814,6 +818,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var installMessage by remember { mutableStateOf("") }
     var backupMessage by remember { mutableStateOf("") }
     var comparisonMessage by remember { mutableStateOf("") }
+    var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
             try {
@@ -995,7 +1000,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Offline behavior", "Runtime offline behavior has not been tested.", "NOT TESTED")
             )),
             WorkspaceCategory("Storage & data", "App storage and data handling", listOf(
-                WorkspaceFeature("Storage footprint", "App storage usage is not currently collected.", "NOT IMPLEMENTED"),
+                WorkspaceFeature("Storage footprint", "Measure installed app APK, data and cache sizes after you grant Android Usage Access.", "REQUIRES USAGE ACCESS", installed),
                 WorkspaceFeature("Backup exposure", "Review the manifest backup-enabled flag; backup rules and actual data exposure still need deeper testing.", if (app.findings.any { it.contains("backup") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Local database", "Private databases remain inside the app sandbox.", "NOT ACCESSIBLE")
             )),
@@ -1110,6 +1115,39 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Storage footprint") {
+                                Button(onClick = {
+                                    try {
+                                        val ops = context.getSystemService(AppOpsManager::class.java)
+                                        val mode = ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+                                        if (mode != AppOpsManager.MODE_ALLOWED) {
+                                            storageResult = "Android Usage Access is required. Enable OMNI CYBER LAB, return here and measure again."
+                                            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                        } else {
+                                            installScope.launch {
+                                                storageResult = "Measuring app storage…"
+                                                storageResult = withContext(Dispatchers.IO) {
+                                                    try {
+                                                        val statsManager = context.getSystemService(StorageStatsManager::class.java)
+                                                        val stats = statsManager.queryStatsForPackage(StorageManager.UUID_DEFAULT, app.pkg, Process.myUserHandle())
+                                                        fun size(value: Long): String {
+                                                            val mb = value / (1024.0 * 1024.0)
+                                                            return if (mb >= 1024) "%.2f GB".format(mb / 1024.0) else "%.1f MB".format(mb)
+                                                        }
+                                                        "APK/app code: ${size(stats.appBytes)}\nUser data: ${size(stats.dataBytes)}\nCache: ${size(stats.cacheBytes)}\nTotal: ${size(stats.appBytes + stats.dataBytes + stats.cacheBytes)}"
+                                                    } catch (e: Exception) {
+                                                        "Storage query unavailable: ${e.message ?: e.javaClass.simpleName}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (e: Exception) { storageResult = "Could not check Usage Access: ${e.message}" }
+                                }, enabled = installed, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text("Measure app storage")
+                                }
+                                if (storageResult.isNotBlank()) Text(storageResult, color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 9.dp))
+                                Text("Android controls this data. It reports package storage totals; it does not expose the app's private database contents.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Compare APK builds") {
                                 Button(onClick = { comparisonPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) },
