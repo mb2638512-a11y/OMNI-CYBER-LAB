@@ -5,6 +5,12 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import java.io.File
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -128,7 +134,72 @@ class MainActivity : ComponentActivity() {
                 var scanTime by remember { mutableStateOf("Waiting for first inventory") }
                 var bridge by remember { mutableStateOf("Checking Shizuku…") }
                 var settings by remember { mutableStateOf(false) }
+                var showAuthorization by remember { mutableStateOf(false) }
+                var importMessage by remember { mutableStateOf("") }
+                val context = androidx.compose.ui.platform.LocalContext.current
                 val scope = rememberCoroutineScope()
+                val apkPicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument()
+                ) { uri: Uri? ->
+                    if (uri != null) {
+                        scope.launch {
+                            importMessage = "Reading APK metadata…"
+                            try {
+                                val imported = withContext(Dispatchers.IO) {
+                                    val file = File.createTempFile("omni-audit-", ".apk", context.cacheDir)
+                                    context.contentResolver.openInputStream(uri)?.use { input ->
+                                        file.outputStream().use { output -> input.copyTo(output) }
+                                    } ?: throw IllegalStateException("Cannot read selected file")
+                                    val pm = context.packageManager
+                                    val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_ACTIVITIES or
+                                        PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
+                                        PackageManager.GET_PROVIDERS or
+                                        (if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0)
+                                    val info = pm.getPackageArchiveInfo(file.absolutePath, flags)
+                                        ?: throw IllegalArgumentException("Not a readable Android APK")
+                                    val ai = info.applicationInfo ?: throw IllegalArgumentException("APK metadata missing")
+                                    ai.sourceDir = file.absolutePath
+                                    ai.publicSourceDir = file.absolutePath
+                                    val perms = info.requestedPermissions?.toList() ?: emptyList()
+                                    val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+                                    val exported = (info.activities?.count { it.exported } ?: 0) +
+                                        (info.services?.count { it.exported } ?: 0) +
+                                        (info.receivers?.count { it.exported } ?: 0) +
+                                        (info.providers?.count { it.exported } ?: 0)
+                                    val cert = if (Build.VERSION.SDK_INT >= 28)
+                                        info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else null
+                                    val signer = cert?.let { bytes ->
+                                        MessageDigest.getInstance("SHA-256").digest(bytes)
+                                            .joinToString(":") { "%02X".format(it) }
+                                    } ?: "Unavailable"
+                                    val findings = buildList {
+                                        if (debug) add("Debuggable build flag is enabled")
+                                        if (perms.any { it.contains("SMS") || it.contains("CONTACTS") ||
+                                            it.contains("LOCATION") || it.contains("CAMERA") ||
+                                            it.contains("RECORD_AUDIO") }) add("Sensitive permissions requested")
+                                        if (exported > 0) add("$exported exported components need access-control review")
+                                        if (signer == "Unavailable") add("Signing fingerprint unavailable")
+                                    }
+                                    val icon = try {
+                                        val d = pm.getApplicationIcon(ai)
+                                        val w = d.intrinsicWidth.coerceAtLeast(1).coerceAtMost(160)
+                                        val h = d.intrinsicHeight.coerceAtLeast(1).coerceAtMost(160)
+                                        Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                                            d.setBounds(0, 0, w, h); d.draw(Canvas(it))
+                                        }
+                                    } catch (_: Exception) { null }
+                                    AppRow(pm.getApplicationLabel(ai).toString(), info.packageName,
+                                        info.versionName ?: "Unknown", icon, perms, exported, debug,
+                                        signer, false, ai.targetSdkVersion, "Imported APK • not installed", findings)
+                                }
+                                selected = imported
+                                importMessage = "APK metadata loaded. Runtime behavior is not tested."
+                            } catch (e: Exception) {
+                                importMessage = "Could not inspect APK: ${e.message}"
+                            }
+                        }
+                    }
+                }
                 fun scan() {
                     scope.launch {
                         scanning = true
