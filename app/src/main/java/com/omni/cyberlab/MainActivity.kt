@@ -579,6 +579,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "CHECKED", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
+                WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
             )),
             WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
@@ -596,7 +597,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             )),
             WorkspaceCategory("Storage & data", "App storage and data handling", listOf(
                 WorkspaceFeature("Storage footprint", "App storage usage is not currently collected.", "NOT IMPLEMENTED"),
-                WorkspaceFeature("Backup exposure", "Backup and exported-data checks are not implemented.", "NOT TESTED"),
+                WorkspaceFeature("Backup exposure", "Review the manifest backup-enabled flag; backup rules and actual data exposure still need deeper testing.", if (app.findings.any { it.contains("backup") }) "REVIEW" else "NO FLAG", true),
                 WorkspaceFeature("Local database", "Private databases remain inside the app sandbox.", "NOT ACCESSIBLE")
             )),
             WorkspaceCategory("Billing & subscriptions", "Review purchases without bypassing them", listOf(
