@@ -90,6 +90,7 @@ private fun inspectApkArchive(path: String?): List<String> {
             }.take(80)
             var scannedBytes = 0L
             val secretSignals = mutableListOf<String>()
+            val networkConfigSignals = mutableListOf<String>()
             val assignmentPattern = Regex("""(?i)(api[_-]?key|client[_-]?secret|access[_-]?token|private[_-]?key|password|secret)\s*[:=]\s*["']?([A-Za-z0-9_./+=-]{12,})""")
             val awsPattern = Regex("""\bAKIA[0-9A-Z]{16}\b""")
             textCandidates.forEach { entry ->
@@ -110,6 +111,17 @@ private fun inspectApkArchive(path: String?): List<String> {
                     }
                     scannedBytes += bytes.size
                     val content = bytes.toString(Charsets.UTF_8)
+                    if (entry.name.contains("network_security_config", ignoreCase = true) || entry.name.endsWith(".xml", ignoreCase = true)) {
+                        if (Regex("""(?i)cleartextTrafficPermitted\\s*=\\s*["']true["']""").containsMatchIn(content)) {
+                            networkConfigSignals.add("Cleartext traffic explicitly permitted • ${entry.name}")
+                        }
+                        if (Regex("""(?i)<certificates[^>]+src\\s*=\\s*["']user["']""").containsMatchIn(content)) {
+                            networkConfigSignals.add("User-added certificate trust anchor present • ${entry.name}; review intended debug-only use")
+                        }
+                        if (Regex("""(?i)<debug-overrides""").containsMatchIn(content)) {
+                            networkConfigSignals.add("Debug certificate overrides present • ${entry.name}; verify release build behavior")
+                        }
+                    }
                     assignmentPattern.findAll(content).take(4).forEach { match ->
                         val keyName = match.groupValues[1]
                         secretSignals.add("Possible embedded credential • $keyName • value redacted • ${entry.name}")
@@ -123,7 +135,7 @@ private fun inspectApkArchive(path: String?): List<String> {
             buildList {
                 add("APK entries: ${entries.size}")
                 add("Total uncompressed size: ${totalUncompressed / 1024} KB")
-                add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")\n                add("Possible credential signals: ${secretSignals.size}")\n                secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }\n                if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")\n                add("Review-relevant config/data files: ${reviewFiles.size}")
+                add("Text files sampled for credential patterns: ${textCandidates.size}; bytes scanned: ${scannedBytes}")\n                add("Network XML review signals: ${networkConfigSignals.size}")\n                networkConfigSignals.take(20).forEach { add("NETWORK REVIEW • $it") }\n                add("Possible credential signals: ${secretSignals.size}")\n                secretSignals.take(30).forEach { add("SECRET REVIEW • $it") }\n                if (secretSignals.isEmpty()) add("No credential patterns matched in sampled text files; this does not prove secrets are absent")\n                add("Review-relevant config/data files: ${reviewFiles.size}")
                 reviewFiles.take(50).forEach { entry -> add("FILE • ${entry.name} • ${entry.size.coerceAtLeast(0L) / 1024} KB") }
                 add("DEX files: ${dex.size}" + if (multidex) " • multidex package" else "")
                 dex.take(20).forEach { add("DEX • $it") }
