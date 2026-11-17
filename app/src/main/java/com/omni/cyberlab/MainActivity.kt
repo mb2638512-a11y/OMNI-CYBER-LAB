@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
@@ -492,6 +494,43 @@ private data class WorkspaceCategory(
 
 @Composable
 private fun Detail(app: AppRow, onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val installed = app.installer != "Imported APK • not installed"
+    fun openInstalledApp() {
+        if (!installed) return
+        val launch = context.packageManager.getLaunchIntentForPackage(app.pkg) ?: return
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(launch)
+    }
+    fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + app.pkg))
+        context.startActivity(intent)
+    }
+    fun exportAudit() {
+        val report = buildString {
+            appendLine("OMNI CYBER LAB — APP AUDIT")
+            appendLine("App: " + app.name)
+            appendLine("Package: " + app.pkg)
+            appendLine("Version: " + app.version)
+            appendLine("Target SDK: " + app.targetSdk)
+            appendLine("Installer: " + app.installer)
+            appendLine("Debuggable: " + app.debug)
+            appendLine("Exported components: " + app.exported)
+            appendLine("Signer SHA-256: " + app.signer)
+            appendLine("Requested permissions:")
+            app.permissions.forEach { appendLine("- " + it) }
+            appendLine("Review signals:")
+            if (app.findings.isEmpty()) appendLine("- No basic metadata flags raised")
+            else app.findings.forEach { appendLine("- " + it) }
+            appendLine("Static metadata only; not a malware verdict or full penetration test.")
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "OMNI CYBER LAB audit — " + app.name)
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        context.startActivity(Intent.createChooser(send, "Export audit report"))
+    }
     val categories = remember(app) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
@@ -530,9 +569,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Branding package", "Plan name, icon, colors and splash-screen assets for an app you own.", "PLANNING ONLY")
             )),
             WorkspaceCategory("App actions", "Safe device-level actions", listOf(
-                WorkspaceFeature("Open app", "Launch this installed app.", "AVAILABLE", true),
+                WorkspaceFeature("Open app", if (installed) "Launch this installed app." else "Imported APK is not installed; launch is unavailable.", if (installed) "AVAILABLE" else "NOT AVAILABLE", installed),
                 WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", "AVAILABLE", true),
-                WorkspaceFeature("Export audit summary", "Exportable report generation is not implemented yet.", "NOT IMPLEMENTED"),
+                WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL")
             ))
         )
@@ -618,14 +657,17 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 Text("Icon design can be planned here. Replacing another app's installed icon is not performed.",
                                     color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
                             } else if (current.title == "Open app") {
-                                Button(onClick = {
-                                    // Launch is handled through the system package launcher intent.
-                                }, enabled = false, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                                    Text("Launch action not wired yet")
+                                Button(onClick = { openInstalledApp() }, enabled = installed, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                    Text(if (installed) "Launch app" else "Imported APK cannot be launched")
                                 }
                             } else if (current.title == "Open system app settings") {
-                                Text("Use Android Settings → Apps → ${app.name} to manage this app.",
-                                    color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
+                                Button(onClick = { openAppSettings() }, enabled = installed, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                    Text(if (installed) "Open Android app settings" else "Not installed on this device")
+                                }
+                            } else if (current.title == "Export audit summary") {
+                                Button(onClick = { exportAudit() }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                    Text("Share audit report")
+                                }
                             }
                         }
                     }
