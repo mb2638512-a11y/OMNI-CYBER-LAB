@@ -65,7 +65,7 @@ data class AppRow(
     val status: String get() = when {
         debug -> "HIGH RISK"
         findings.isNotEmpty() -> "REVIEW"
-        else -> "INVENTORY CHECKED"
+        else -> "INVENTORY ONLY"
     }
 }
 
@@ -385,8 +385,32 @@ class MainActivity : ComponentActivity() {
                                     Text(importMessage, color = Grey, fontSize = 10.sp,
                                         modifier = Modifier.padding(bottom = 5.dp))
                                 }
+                                Card(modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                                    shape = RoundedCornerShape(17.dp)) {
+                                    Column(Modifier.fillMaxWidth().padding(13.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text("DEVICE APP INVENTORY", color = Grey, fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                                                Text("${apps.size} apps discovered", fontSize = 20.sp,
+                                                    fontWeight = FontWeight.ExtraBold)
+                                            }
+                                            Surface(color = Green.copy(alpha = .13f), shape = RoundedCornerShape(30.dp)) {
+                                                Text("LOCAL • OFFLINE", color = Green, fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                                            }
+                                        }
+                                        Spacer(Modifier.height(10.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Metric("NEEDS REVIEW", review.toString(), "Metadata flags", Orange, Modifier.weight(1f))
+                                            Metric("DEBUG BUILDS", high.toString(), "Debuggable flag", Red, Modifier.weight(1f))
+                                        }
+                                    }
+                                }
                                 Text("Installed applications", fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 8.dp))
+                                    modifier = Modifier.padding(top = 10.dp))
                                 Text("${shown.size} apps • Tap an app to inspect its metadata",
                                     color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 10.dp))
                                 OutlinedTextField(value = query, onValueChange = { query = it },
@@ -638,7 +662,25 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                            if (current.title == "Display name") {
+                            if (current.title == "Permission inventory" || current.title == "Sensitive permissions") {
+                                val visiblePermissions = if (current.title == "Sensitive permissions") {
+                                    app.permissions.filter { p -> listOf("CAMERA", "RECORD_AUDIO", "LOCATION", "CONTACTS", "SMS", "PHONE", "CALENDAR", "BODY_SENSORS").any { p.contains(it) } }
+                                } else app.permissions
+                                Text("${visiblePermissions.size} permission entries", color = Green,
+                                    fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 12.dp))
+                                if (visiblePermissions.isEmpty()) {
+                                    Text("No matching declared permissions were found in the package metadata.",
+                                        color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                                } else {
+                                    visiblePermissions.forEach { permission ->
+                                        Text("• $permission", color = Grey, fontSize = 10.sp,
+                                            modifier = Modifier.padding(top = 5.dp))
+                                    }
+                                }
+                                Text("Declared permissions are requests, not proof that access was granted or abused.",
+                                    color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            } else if (current.title == "Display name") {
                                 OutlinedTextField(value = alias, onValueChange = { alias = it },
                                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                                     label = { Text("Custom display name") }, singleLine = true)
