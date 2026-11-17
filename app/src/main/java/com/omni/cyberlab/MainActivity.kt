@@ -1092,7 +1092,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Open app" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK is not installed." else "Use Launch app to open the installed app.")
         "Open system app settings" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK has no Android settings page on this device." else "Use Open Android app settings to view system controls.")
         "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result.")
-        "Create APK backup" -> listOf("Export a copy of the available APK source using Android document picker.", "Split APK applications may need a complete package set; this exports only the selected base APK.")
+        "Create APK backup" -> listOf("Export APK files with a SHA-256 and archive/package consistency report using Android document picker.", "Split APK applications may need a complete package set; this exports only the selected base APK.")
         else -> listOf("Automated test engine is not implemented for this feature yet.", "No test was run and no pass/fail result is claimed.")
     }
 }
@@ -1397,7 +1397,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
                 WorkspaceFeature("Uninstall / disable", "Use Android system controls; protected system apps may not allow changes.", "SYSTEM CONTROL"),
                 WorkspaceFeature("Install / reinstall APK", "Open Android Package Installer with this APK. Android confirmation is always required.", if (app.apkPath.isNullOrBlank()) "APK NOT AVAILABLE" else if (installed) "REINSTALL / UPDATE" else "INSTALL APK", !app.apkPath.isNullOrBlank()),
-                WorkspaceFeature("Create APK backup", "Export the base APK and available split APK files together as a ZIP backup bundle.", if (app.apkPaths.isEmpty() && app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • APK SET", !app.apkPaths.isEmpty() || !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Create APK backup", "Export the base APK and available split APK files together with SHA-256, archive and package-identity checks in a ZIP backup bundle.", if (app.apkPaths.isEmpty() && app.apkPath.isNullOrBlank()) "SOURCE UNAVAILABLE" else "READY • APK SET", !app.apkPaths.isEmpty() || !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Sign APK", "Sign an APK you own or built using your own JKS/PKCS12 keystore. Signing does not modify app code.", "READY • OWN KEYSTORE", true)
             ))
         )
