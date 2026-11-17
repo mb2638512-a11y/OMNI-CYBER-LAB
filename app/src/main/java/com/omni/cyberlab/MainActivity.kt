@@ -101,6 +101,8 @@ class MainActivity : ComponentActivity() {
                 } ?: "Unavailable"
                 val findings = buildList {
                     if (debug) add("Debuggable build flag is enabled")
+                    if (ai.flags and ApplicationInfo.FLAG_ALLOW_BACKUP != 0) add("App backup is enabled; review sensitive-data backup rules")
+                    if (Build.VERSION.SDK_INT >= 23 && ai.usesCleartextTraffic) add("Cleartext network traffic is allowed by manifest")
                     if (perms.any { it.contains("SMS") || it.contains("CONTACTS") ||
                             it.contains("LOCATION") || it.contains("CAMERA") ||
                             it.contains("RECORD_AUDIO") }) add("Sensitive permissions requested")
@@ -176,6 +178,8 @@ class MainActivity : ComponentActivity() {
                                     } ?: "Unavailable"
                                     val findings = buildList {
                                         if (debug) add("Debuggable build flag is enabled")
+                                        if (ai.flags and ApplicationInfo.FLAG_ALLOW_BACKUP != 0) add("App backup is enabled; review sensitive-data backup rules")
+                                        if (Build.VERSION.SDK_INT >= 23 && ai.usesCleartextTraffic) add("Cleartext network traffic is allowed by manifest")
                                         if (perms.any { it.contains("SMS") || it.contains("CONTACTS") ||
                                             it.contains("LOCATION") || it.contains("CAMERA") ||
                                             it.contains("RECORD_AUDIO") }) add("Sensitive permissions requested")
@@ -540,6 +544,10 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine("Installer: " + app.installer)
             appendLine("Debuggable: " + app.debug)
             appendLine("Exported components: " + app.exported)
+            appendLine("Manifest review signals:")
+            val manifestSignals = app.findings.filter { it.contains("backup") || it.contains("Cleartext") }
+            if (manifestSignals.isEmpty()) appendLine("- No backup/cleartext metadata flags raised")
+            else manifestSignals.forEach { appendLine("- " + it) }
             appendLine("Signer SHA-256: " + app.signer)
             appendLine("Requested permissions:")
             app.permissions.forEach { appendLine("- " + it) }
