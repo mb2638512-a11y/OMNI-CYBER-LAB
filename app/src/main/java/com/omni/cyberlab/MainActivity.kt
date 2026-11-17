@@ -295,14 +295,16 @@ private fun inspectResourceTableLocales(path: String?): String {
                         var valueCount = 0
                         var complexCount = 0
                         output.append("\nRESOURCE ID ENUMERATION\n")
-                        (1..255).mapNotNull { resourceTable.getPackage(it.toShort()) }.sortedBy { it.id.toInt() }.forEach { pkg ->
+                        val packages = (1..255).mapNotNull { resourceTable.getPackage(it.toShort()) }.sortedBy { it.id.toInt() }
+                        for (pkg in packages) {
                             output.append("PACKAGE • ").append(pkg.name).append(" • ID 0x").append("%02X".format(pkg.id.toInt() and 0xFF)).append("\n")
-                            pkg.typeSpecMap.values.sortedBy { it.id.toInt() }.forEach { spec ->
+                            val specs = pkg.typeSpecMap.values.sortedBy { it.id.toInt() }
+                            for (spec in specs) {
                                 val variants = pkg.typesMap[spec.id].orEmpty()
                                 val entryCount = spec.entryFlags.size
                                 output.append("TYPE • ").append(spec.name).append(" • ID ").append(spec.id.toInt() and 0xFF).append(" • entries ").append(entryCount).append(" • configurations ").append(variants.size).append("\n")
                                 for (entryIndex in 0 until minOf(entryCount, 50000)) {
-                                    variants.forEach { type ->
+                                    for (type in variants) {
                                         val entry = try { type.getResourceEntry(entryIndex) } catch (_: Exception) { null }
                                         if (entry != null) {
                                             val resourceId = ((pkg.id.toInt() and 0xFF) shl 24) or ((spec.id.toInt() and 0xFF) shl 16) or (entryIndex and 0xFFFF)
