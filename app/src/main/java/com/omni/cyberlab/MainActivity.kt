@@ -339,7 +339,7 @@ private fun inspectResourceTableLocales(path: String?): String {
                         output.append("Enumerated resource configurations: ").append(resourceIdCount).append("\n")
                         output.append("Simple values decoded: ").append(valueCount).append(" • complex/map entries listed without expansion: ").append(complexCount).append("\n")
                         if (resourceIdCount >= 1200) output.append("ENUMERATION LIMIT • stopped after 1,200 resource configurations to bound report size.\n")
-                        if (entryCount > 50000) output.append("ENTRY LIMIT • this type contains more than 50,000 slots; remaining slots omitted.\n")
+
                     }
                 } else if (tableEntry != null) {
                     output.append("Resource table exceeds the 32 MiB in-memory parsing limit; hash and ID enumeration skipped.\n")
