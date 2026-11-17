@@ -3,6 +3,7 @@ package com.omni.cyberlab
 import com.android.apksig.ApkSigner
 import net.dongliu.apk.parser.ApkFile
 import net.dongliu.apk.parser.parser.ResourceTableParser
+import net.dongliu.apk.parser.struct.ResourceValue
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
@@ -276,15 +277,15 @@ private fun inspectResourceTableLocales(path: String?): String {
                 val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
                 val resourceEntries = entries.filter { it.name.startsWith("res/") }
                 val tableEntry = zip.getEntry("resources.arsc")
-                output.append("RESOURCE TABLE CONFIGURATION INSPECTION\\n")
-                output.append("resources.arsc: ").append(if (tableEntry != null) "present • ${tableEntry.size} bytes" else "not found").append("\\n")
+                output.append("RESOURCE TABLE CONFIGURATION INSPECTION\n")
+                output.append("resources.arsc: ").append(if (tableEntry != null) "present • ${tableEntry.size} bytes" else "not found").append("\n")
                 if (tableEntry != null && tableEntry.size in 1..(32L * 1024L * 1024L)) {
                     val digest = MessageDigest.getInstance("SHA-256")
                     zip.getInputStream(tableEntry).use { input ->
                         val buffer = ByteArray(8192)
                         while (true) { val count = input.read(buffer); if (count <= 0) break; digest.update(buffer, 0, count) }
                     }
-                    output.append("resources.arsc SHA-256: ").append(digest.digest().joinToString("") { "%02X".format(it) }).append("\\n")
+                    output.append("resources.arsc SHA-256: ").append(digest.digest().joinToString("") { "%02X".format(it) }).append("\n")
                     val tableBytes = apk.getFileData("resources.arsc")
                     if (tableBytes != null) {
                         val parser = ResourceTableParser(ByteBuffer.wrap(tableBytes))
@@ -293,14 +294,14 @@ private fun inspectResourceTableLocales(path: String?): String {
                         var resourceIdCount = 0
                         var valueCount = 0
                         var complexCount = 0
-                        output.append("\\nRESOURCE ID ENUMERATION\\n")
+                        output.append("\nRESOURCE ID ENUMERATION\n")
                         (1..255).mapNotNull { resourceTable.getPackage(it.toShort()) }.sortedBy { it.id.toInt() }.forEach { pkg ->
-                            output.append("PACKAGE • ").append(pkg.name).append(" • ID 0x").append("%02X".format(pkg.id.toInt() and 0xFF)).append("\\n")
+                            output.append("PACKAGE • ").append(pkg.name).append(" • ID 0x").append("%02X".format(pkg.id.toInt() and 0xFF)).append("\n")
                             pkg.typeSpecMap.values.sortedBy { it.id.toInt() }.forEach { spec ->
                                 val variants = pkg.typesMap[spec.id].orEmpty()
                                 val entryCount = spec.entryFlags.size
-                                output.append("TYPE • ").append(spec.name).append(" • ID ").append(spec.id.toInt() and 0xFF).append(" • entries ").append(entryCount).append(" • configurations ").append(variants.size).append("\\n")
-                                for (entryIndex in 0 until entryCount) {
+                                output.append("TYPE • ").append(spec.name).append(" • ID ").append(spec.id.toInt() and 0xFF).append(" • entries ").append(entryCount).append(" • configurations ").append(variants.size).append("\n")
+                                for (entryIndex in 0 until minOf(entryCount, 50000)) {
                                     variants.forEach { type ->
                                         val entry = try { type.getResourceEntry(entryIndex) } catch (_: Exception) { null }
                                         if (entry != null) {
@@ -308,10 +309,21 @@ private fun inspectResourceTableLocales(path: String?): String {
                                             val idText = String.format(Locale.US, "0x%08X", resourceId)
                                             val localeTag = type.locale.toLanguageTag()
                                             val config = if (localeTag == "und") "default" else localeTag
-                                            val value = if ((entry.flags and net.dongliu.apk.parser.struct.resource.ResourceEntry.FLAG_COMPLEX) != 0) { complexCount++; "<complex/map value>" } else { valueCount++; entry.toStringValue(resourceTable, type.locale).orEmpty().take(240) }
+                                            val value = if ((entry.flags and net.dongliu.apk.parser.struct.resource.ResourceEntry.FLAG_COMPLEX) != 0) {
+                                                complexCount++
+                                                "<complex/map value>"
+                                            } else {
+                                                valueCount++
+                                                val rawValue = entry.value
+                                                if (rawValue is ResourceValue.ReferenceResourceValue) {
+                                                    "@0x" + java.lang.Long.toHexString(rawValue.getReferenceResourceId())
+                                                } else {
+                                                    rawValue?.toStringValue(resourceTable, type.locale)?.take(240) ?: "null"
+                                                }
+                                            }
                                             output.append(idText).append(" • ").append(spec.name).append("/").append(entry.key)
                                                 .append(" • ").append(config).append(" • density ").append(type.density)
-                                                .append(" • ").append(value).append("\\n")
+                                                .append(" • ").append(value).append("\n")
                                             resourceIdCount++
                                             if (resourceIdCount >= 1200) break
                                         }
@@ -322,36 +334,37 @@ private fun inspectResourceTableLocales(path: String?): String {
                             }
                             if (resourceIdCount >= 1200) break
                         }
-                        output.append("Enumerated resource configurations: ").append(resourceIdCount).append("\\n")
-                        output.append("Simple values decoded: ").append(valueCount).append(" • complex/map entries listed without expansion: ").append(complexCount).append("\\n")
-                        if (resourceIdCount >= 1200) output.append("ENUMERATION LIMIT • stopped after 1,200 resource configurations to bound memory and report size.\\n")
+                        output.append("Enumerated resource configurations: ").append(resourceIdCount).append("\n")
+                        output.append("Simple values decoded: ").append(valueCount).append(" • complex/map entries listed without expansion: ").append(complexCount).append("\n")
+                        if (resourceIdCount >= 1200) output.append("ENUMERATION LIMIT • stopped after 1,200 resource configurations to bound report size.\n")
+                        if (entryCount > 50000) output.append("ENTRY LIMIT • this type contains more than 50,000 slots; remaining slots omitted.\n")
                     }
                 } else if (tableEntry != null) {
-                    output.append("Resource table exceeds the 32 MiB in-memory parsing limit; hash and ID enumeration skipped.\\n")
+                    output.append("Resource table exceeds the 32 MiB in-memory parsing limit; hash and ID enumeration skipped.\n")
                 }
                 val locales = apk.locales.sortedBy { it.toLanguageTag() }
-                output.append("\\nLocale configurations reported by parser: ").append(locales.size).append("\\n")
-                if (locales.isEmpty()) output.append("No locale-specific configurations reported; default resources may still exist.\\n")
+                output.append("\nLocale configurations reported by parser: ").append(locales.size).append("\n")
+                if (locales.isEmpty()) output.append("No locale-specific configurations reported; default resources may still exist.\n")
                 val originalLocale = apk.preferredLocale
                 locales.take(32).forEach { locale ->
                     apk.preferredLocale = locale
                     val manifest = apk.manifestXml ?: ""
                     val appTag = manifest.substringAfter("<application", "").substringBefore(">", "")
                     val label = Regex("android:label=\\\"([^\\\"]+)\\\"").find(appTag)?.groupValues?.getOrNull(1)
-                    output.append("LOCALE • ").append(locale.toLanguageTag()).append(" • application label: ").append(label ?: "not declared/resolved").append("\\n")
+                    output.append("LOCALE • ").append(locale.toLanguageTag()).append(" • application label: ").append(label ?: "not declared/resolved").append("\n")
                 }
                 apk.preferredLocale = originalLocale
                 val typeCounts = resourceEntries.groupingBy { it.name.split("/").getOrNull(1)?.substringBefore("-") ?: "unknown" }.eachCount().toSortedMap()
-                output.append("\\nRESOURCE FILE INVENTORY • ").append(resourceEntries.size).append(" files\\n")
-                typeCounts.forEach { (type, count) -> output.append("TYPE • ").append(type).append(" • ").append(count).append(" files\\n") }
+                output.append("\nRESOURCE FILE INVENTORY • ").append(resourceEntries.size).append(" files\n")
+                typeCounts.forEach { (type, count) -> output.append("TYPE • ").append(type).append(" • ").append(count).append(" files\n") }
                 val valueConfigs = resourceEntries.mapNotNull { entry -> entry.name.split("/").getOrNull(1)?.takeIf { it.startsWith("values") } }.distinct().sorted()
-                output.append("\\nRESOURCE VALUE CONFIGURATIONS • ").append(valueConfigs.size).append("\\n")
-                valueConfigs.take(100).forEach { output.append("CONFIG • res/").append(it).append("\\n") }
-                output.append("\\nRESOURCE FILE DETAILS (first 180 sorted entries)\\n")
-                resourceEntries.sortedBy { it.name }.take(180).forEach { entry -> output.append(entry.name).append(" • ").append(entry.size.coerceAtLeast(0L)).append(" bytes\\n") }
-                output.append("\\nTotal declared uncompressed resource bytes: ").append(resourceEntries.sumOf { it.size.coerceAtLeast(0L) }).append("\\n")
-                if (resourceEntries.size > 180) output.append("DETAIL LIMIT • ${resourceEntries.size - 180} additional resource paths omitted.\\n")
-                output.append("\\nResource IDs are enumerated from parser-exposed package/type/entry structures. Values are best-effort; complex values are identified but not expanded, and framework/dynamic-feature references may not resolve. No resource editing or APK rebuild is performed.")
+                output.append("\nRESOURCE VALUE CONFIGURATIONS • ").append(valueConfigs.size).append("\n")
+                valueConfigs.take(100).forEach { output.append("CONFIG • res/").append(it).append("\n") }
+                output.append("\nRESOURCE FILE DETAILS (first 180 sorted entries)\n")
+                resourceEntries.sortedBy { it.name }.take(180).forEach { entry -> output.append(entry.name).append(" • ").append(entry.size.coerceAtLeast(0L)).append(" bytes\n") }
+                output.append("\nTotal declared uncompressed resource bytes: ").append(resourceEntries.sumOf { it.size.coerceAtLeast(0L) }).append("\n")
+                if (resourceEntries.size > 180) output.append("DETAIL LIMIT • ${resourceEntries.size - 180} additional resource paths omitted.\n")
+                output.append("\nResource IDs are enumerated from parser-exposed package/type/entry structures. Values are best-effort; complex values are identified but not expanded, and framework/dynamic-feature references may not resolve. No resource editing or APK rebuild is performed.")
                 output.toString().take(36000)
             }
         }
