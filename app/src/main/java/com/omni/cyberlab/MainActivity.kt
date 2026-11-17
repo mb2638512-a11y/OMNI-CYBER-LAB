@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.content.pm.PackageInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.content.Intent
@@ -579,6 +581,32 @@ private data class WorkspaceCategory(
 private fun Detail(app: AppRow, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val installed = app.installer != "Imported APK • not installed"
+    var pendingPdfText by remember { mutableStateOf("") }
+    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) {
+            try {
+                val pdf = PdfDocument()
+                val paint = Paint().apply { textSize = 10f; isAntiAlias = true }
+                val lines = pendingPdfText.lines()
+                var pageNumber = 1
+                var index = 0
+                while (index < lines.size) {
+                    val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+                    var y = 42f
+                    while (index < lines.size && y < 810f) {
+                        val line = lines[index].take(105)
+                        page.canvas.drawText(line, 36f, y, paint)
+                        y += 15f
+                        index++
+                    }
+                    pdf.finishPage(page)
+                    pageNumber++
+                }
+                context.contentResolver.openOutputStream(uri)?.use { pdf.writeTo(it) }
+                pdf.close()
+            } catch (_: Exception) { }
+        }
+    }
     fun openInstalledApp() {
         if (!installed) return
         val launch = context.packageManager.getLaunchIntentForPackage(app.pkg) ?: return
@@ -589,8 +617,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + app.pkg))
         context.startActivity(intent)
     }
-    fun exportAudit() {
-        val report = buildString {
+    fun buildAuditReport(): String = buildString {
             appendLine("OMNI CYBER LAB — APP AUDIT")
             appendLine("App: " + app.name)
             appendLine("Package: " + app.pkg)
@@ -625,7 +652,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             }
             appendLine("Framework note: MASVS labels are guidance mappings, not a formal compliance result. Severity requires validation and evidence.")
             appendLine("Static metadata only; not a malware verdict or full penetration test.")
-        }
+    }
+    fun exportAudit() {
+        val report = buildAuditReport()
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, "OMNI CYBER LAB audit — " + app.name)
@@ -806,6 +835,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             } else if (current.title == "Export audit summary") {
                                 Button(onClick = { exportAudit() }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                                     Text("Share audit report")
+                                }
+                                OutlinedButton(onClick = { pendingPdfText = buildAuditReport(); pdfLauncher.launch("omni-audit-${app.pkg.substringAfterLast('.')}.pdf") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Text("Save PDF report")
                                 }
                             }
                         }
