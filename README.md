@@ -15,6 +15,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Import an APK through Android's document picker and inspect metadata without installing or executing it.
 - APK ZIP inventory: DEX files, native libraries, resource folder entries, assets, network security config and META-INF markers.
 - Bounded DEX printable-string triage for selected API/behavior markers, URLs, credential-like patterns and common billing/ads/analytics SDK references.
+- Structured static security checks with severity, evidence and remediation notes for debug flags, cleartext policy, backup configuration, sensitive permissions, exported components, signer availability and sampled code indicators.
 - Smali disassembly export and bounded Smali-to-DEX rebuild workflow.
 - APK signing with a user-provided JKS/PKCS12 keystore using Android apksig.
 - Static comparison of two APKs: package/version, signer, permissions, exported components and file hash.
@@ -48,7 +49,7 @@ On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shi
 
 ## Important limitations
 
-- APK archive inventory and DEX string scans are static indicators, not a malware verdict or proof that an app is safe.
+- APK archive inventory, DEX string scans and structured security rules are static indicators, not a malware verdict or proof that an app is safe. No-match results do not establish that an app is secure.
 - Binary manifest and selected compiled XML files are decoded for review. Complete resource-table resolution and editable resource rebuild are not yet implemented.
 - Smali output is bytecode disassembly, not Java/Kotlin source reconstruction. Rebuild changes DEX code only; it does not rebuild edited resources or binary manifests.
 - Native library behavior, encrypted/obfuscated strings and runtime code paths are not comprehensively analyzed.
