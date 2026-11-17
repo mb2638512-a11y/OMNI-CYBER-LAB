@@ -650,6 +650,39 @@ private fun subcategoryFor(category: String, feature: String): String {
     }
 }
 
+private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String> {
+    return when (feature.title) {
+        "Security overview" -> buildList {
+            add("Local package metadata reviewed for " + app.name + ".")
+            add("Inventory state: " + app.status + ".")
+            if (app.findings.isEmpty()) add("No configured metadata review flags were raised.") else app.findings.forEach { add("Review signal: " + it) }
+            add("Static metadata review only; this is not a malware verdict.")
+        }
+        "Signer & integrity" -> listOf("SHA-256 signer fingerprint: " + app.signer, "Compare with a trusted release fingerprint before drawing an integrity conclusion.")
+        "DEX & native libraries" -> app.archiveInventory.ifEmpty { listOf("APK archive inventory is unavailable.") }
+        "Debug & exported components" -> buildList {
+            add("Debuggable flag: " + app.debug + ".")
+            add("Exported component count: " + app.exportedComponents.size + ".")
+            app.exportedComponents.forEach { add(it) }
+            add("Exported components need access-control review; exported alone is not proof of vulnerability.")
+        }
+        "Cleartext traffic policy" -> app.findings.filter { it.contains("Cleartext", true) }.ifEmpty { listOf("No cleartext manifest flag was raised. Binary XML and runtime traffic remain untested.") }
+        "Permission inventory" -> listOf("Declared permissions: " + app.permissions.size) + app.permissions
+        "Sensitive permissions" -> {
+            val sensitive = app.permissions.filter { p -> listOf("CAMERA", "RECORD_AUDIO", "LOCATION", "CONTACTS", "SMS", "PHONE", "CALENDAR", "BODY_SENSORS").any { p.contains(it) } }
+            listOf("Sensitive permission candidates: " + sensitive.size) + sensitive
+        }
+        "Runtime permission grants" -> if (app.installer == "Imported APK • not installed") listOf("Runtime grants are unavailable for an APK that is not installed.") else app.permissions.map { p -> (if (app.grantedPermissions.contains(p)) "GRANTED • " else "NOT GRANTED • ") + p }.ifEmpty { listOf("No declared permissions were reported.") }
+        "Backup exposure" -> listOf(app.findings.firstOrNull { it.contains("backup", true) } ?: "No backup-enabled metadata flag was raised.", "Backup rules and backed-up data are not inspected.")
+        "Display name" -> listOf("Name preview is available inside this workspace only.", "The installed launcher label is unchanged.")
+        "Icon concept" -> listOf("Icon concept is design-only; the installed app icon is unchanged.")
+        "Export audit summary" -> listOf("Audit report assembled from current static inventory.", "Use Share audit report or Save PDF report to export it.")
+        "Open app" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK is not installed." else "Use Launch app to open the installed app.")
+        "Open system app settings" -> listOf(if (app.installer == "Imported APK • not installed") "Imported APK has no Android settings page on this device." else "Use Open Android app settings to view system controls.")
+        "Install / reinstall APK" -> listOf("Package Installer opens after you press the install button.", "Android displays its own confirmation and installation result.")
+        else -> listOf("Automated test engine is not implemented for this feature yet.", "No test was run and no pass/fail result is claimed.")
+    }
+}
 @Composable
 private fun Detail(app: AppRow, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -850,6 +883,12 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                            if (featureResults.isNotEmpty()) {
+                                Text("AUTOMATED RESULT", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                featureResults.forEach { result ->
+                                    Text("• $result", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                                }
+                            }
                             if (current.title == "DEX & native libraries") {
                                 Text("APK archive inventory", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 app.archiveInventory.forEach { line -> Text("• $line", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp)) }
@@ -934,7 +973,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 items(category!!.features.filter { subcategoryFor(category!!.title, it.title) == subcategory }) { item ->
                     WorkspaceFeatureCard(item) {
                         feature = item
-                        featureResults = emptyList()
+                        featureResults = runFeatureAudit(app, item)
                     }
                 }
             } else if (category != null) {
