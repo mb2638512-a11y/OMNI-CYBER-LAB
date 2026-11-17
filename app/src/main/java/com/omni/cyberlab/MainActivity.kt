@@ -102,13 +102,24 @@ private fun installApkSetWithPackageInstaller(context: Context, expectedPackage:
         val info = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES)
             ?: throw IllegalArgumentException("Not a readable APK: ${file.name}")
         require(info.packageName == expectedPackage) { "Package mismatch in ${file.name}: ${info.packageName}" }
-        val splitName = info.splitNames?.firstOrNull()
-        file to splitName
+        val signerBytes = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else {
+            @Suppress("DEPRECATION")
+            info.signatures?.firstOrNull()?.toByteArray()
+        }
+        val signer = signerBytes?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02X".format(b) } }
+            ?: throw IllegalArgumentException("Could not read signing certificate for ${file.name}")
+        val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        Triple(file, info.splitNames?.firstOrNull(), signer to version)
     }
     val baseCount = parsed.count { it.second.isNullOrBlank() }
     require(baseCount == 1) { "A split APK set must contain exactly one base APK; found $baseCount." }
     val splitNames = parsed.mapNotNull { it.second }
     require(splitNames.distinct().size == splitNames.size) { "Duplicate split APK names were found." }
+    require(parsed.map { it.third.first }.distinct().size == 1) { "APK set contains different signing certificates." }
+    require(parsed.map { it.third.second }.distinct().size == 1) { "APK set contains different version codes." }
     val totalBytes = sources.sumOf { it.length() }
     require(totalBytes > 0L) { "APK set is empty." }
     val installer = pm.packageInstaller
@@ -119,7 +130,7 @@ private fun installApkSetWithPackageInstaller(context: Context, expectedPackage:
     val sessionId = installer.createSession(params)
     try {
         installer.openSession(sessionId).use { session ->
-            parsed.forEach { (file, splitName) ->
+            parsed.forEach { (file, splitName, _) ->
                 val entryName = if (splitName.isNullOrBlank()) "base.apk" else "split_${splitName.replace(Regex("[^A-Za-z0-9_.-]"), "_")}.apk"
                 session.openWrite(entryName, 0L, file.length()).use { output ->
                     file.inputStream().use { input -> input.copyTo(output) }
