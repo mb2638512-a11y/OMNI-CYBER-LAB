@@ -15,6 +15,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Import an APK through Android's document picker and inspect metadata without installing or executing it.
 - APK ZIP inventory: DEX files, native libraries, resource folder entries, assets, network security config and META-INF markers.
 - Bounded DEX printable-string triage for selected API/behavior markers, URLs, credential-like patterns and common billing/ads/analytics SDK references.
+- Resource-table locale/configuration inspection with localized manifest-label resolution where available (not full resource-ID enumeration or editing).
 - Structured static security checks with severity, evidence and remediation notes for debug flags, cleartext policy, backup configuration, sensitive permissions, exported components, signer availability and sampled code indicators.
 - Smali disassembly export and bounded Smali-to-DEX rebuild workflow.
 - APK signing with a user-provided JKS/PKCS12 keystore using Android apksig.
