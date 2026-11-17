@@ -119,7 +119,12 @@ private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager
         @Suppress("DEPRECATION")
         val parsed = try { packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES) } catch (_: Exception) { null }
         val parsedPackage = parsed?.packageName ?: "unparsed"
-        val parsedVersion = parsed?.longVersionCode
+        val parsedVersion = parsed?.let { info ->
+            if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        }
         @Suppress("DEPRECATION")
         val signer = parsed?.signatures?.firstOrNull()?.toByteArray()?.let { bytes -> MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { b -> "%02X".format(b) } }
         if (parsed == null) consistencyWarnings++
