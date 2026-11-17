@@ -222,6 +222,29 @@ private fun inspectApkArchive(path: String?): List<String> {
 }
 
 
+
+private suspend fun inspectPackageWithShizuku(packageName: String): List<String> = withContext(Dispatchers.IO) {
+    if (!packageName.matches(Regex("[A-Za-z0-9_.]+"))) return@withContext listOf("Invalid package identifier.")
+    try {
+        if (!Shizuku.pingBinder()) return@withContext listOf("Shizuku service is not running. Start Shizuku and retry.")
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+            return@withContext listOf("Shizuku permission has not been granted to OMNI CYBER LAB.")
+        }
+        val process = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys package $packageName"), null, null)
+        try {
+            val lines = process.inputStream.bufferedReader().use { reader ->
+                generateSequence { reader.readLine() }.take(100).toList()
+            }
+            if (lines.isEmpty()) listOf("No package diagnostic output returned.")
+            else listOf("Read-only Android package diagnostics • first 100 lines", *lines.toTypedArray())
+        } finally {
+            process.destroy()
+        }
+    } catch (e: Exception) {
+        listOf("Shizuku diagnostic failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}")
+    }
+}
+
 private fun classifyFinding(finding: String): Pair<String, String> {
     val value = finding.lowercase()
     return when {
@@ -814,10 +837,13 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
 private fun Detail(app: AppRow, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val installed = app.installer != "Imported APK • not installed"
+    val shizukuReady = try { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: Exception) { false }
     var pendingPdfText by remember { mutableStateOf("") }
     var installMessage by remember { mutableStateOf("") }
     var backupMessage by remember { mutableStateOf("") }
     var comparisonMessage by remember { mutableStateOf("") }
+    var shizukuReport by remember { mutableStateOf("") }
+    var shizukuRunning by remember { mutableStateOf(false) }
     var storageResult by remember { mutableStateOf("") }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) {
@@ -1017,6 +1043,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Branding package", "Plan name, icon, colors and splash-screen assets for an app you own.", "PLANNING ONLY")
             )),
             WorkspaceCategory("App actions", "Safe device-level actions", listOf(
+                WorkspaceFeature("Shizuku package diagnostics", "Read Android package-manager diagnostics through your explicitly authorized Shizuku shell session.", if (shizukuReady) "READY • SHIZUKU" else "SHIZUKU REQUIRED", installed),
                 WorkspaceFeature("Open app", if (installed) "Launch this installed app." else "Imported APK is not installed; launch is unavailable.", if (installed) "AVAILABLE" else "NOT AVAILABLE", installed),
                 WorkspaceFeature("Open system app settings", "View Android's official settings page for this app.", if (installed) "AVAILABLE" else "NOT AVAILABLE FOR APK", installed),
                 WorkspaceFeature("Export audit summary", "Share a readable metadata audit report.", "AVAILABLE", true),
@@ -1115,6 +1142,22 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }, enabled = trustedSigner.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Compare trusted fingerprint") }
                                 if (signerCheckResult.isNotBlank()) Text(signerCheckResult, color = if (signerCheckResult.startsWith("MATCH")) Green else Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Shizuku package diagnostics") {
+                                Button(onClick = {
+                                    installScope.launch {
+                                        shizukuRunning = true
+                                        shizukuReport = "Collecting read-only package diagnostics…"
+                                        shizukuReport = inspectPackageWithShizuku(app.pkg).joinToString("\n")
+                                        shizukuRunning = false
+                                    }
+                                }, enabled = installed && shizukuReady && !shizukuRunning,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text(if (shizukuRunning) "Collecting…" else "Run Shizuku package diagnostics")
+                                }
+                                if (!shizukuReady) Text("Start Shizuku, authorize OMNI CYBER LAB, then return and refresh the bridge status on the home screen.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                if (shizukuReport.isNotBlank()) Text(shizukuReport, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 9.dp))
+                                Text("Read-only dumpsys output. This does not access another app's private files, change settings or execute code inside the target app.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Storage footprint") {
                                 Button(onClick = {
