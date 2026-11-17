@@ -245,6 +245,34 @@ private suspend fun inspectPackageWithShizuku(packageName: String): List<String>
     }
 }
 
+private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<String> = withContext(Dispatchers.IO) {
+    if (!packageName.matches(Regex("[A-Za-z0-9_.]+"))) return@withContext listOf("Invalid package identifier.")
+    try {
+        if (!Shizuku.pingBinder()) return@withContext listOf("Shizuku service is not running.")
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return@withContext listOf("Shizuku permission is required.")
+        val pidProcess = Shizuku.newProcess(arrayOf("sh", "-c", "pidof $packageName"), null, null)
+        val pid = try { pidProcess.inputStream.bufferedReader().readText().trim().split(Regex("\\s+")).firstOrNull { it.matches(Regex("[0-9]+")) } } finally { pidProcess.destroy() }
+        if (pid.isNullOrBlank()) return@withContext listOf("Target process is not running. Launch the app, reproduce the flow, then capture logs.")
+        val logProcess = Shizuku.newProcess(arrayOf("logcat", "-d", "--pid=$pid", "-t", "250"), null, null)
+        val rawLines = try { logProcess.inputStream.bufferedReader().use { reader -> generateSequence { reader.readLine() }.take(250).toList() } } finally { logProcess.destroy() }
+        val secretPattern = Regex("""(?i)(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret)(\\s*[:=]\\s*)[^\\s,;]+""")
+        val emailPattern = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}""")
+        val redacted = rawLines.map { line ->
+            secretPattern.replace(line) { m -> m.groupValues[1] + m.groupValues[2] + "[REDACTED]" }
+                .let { emailPattern.replace(it, "[EMAIL]") }
+        }
+        val indicators = listOf("FATAL EXCEPTION", "SecurityException", "Permission Denial", "SSLHandshakeException", "Cleartext", "StrictMode", "ANR in", "NetworkOnMainThreadException", "SQLiteException")
+        val matches = redacted.filter { line -> indicators.any { line.contains(it, true) } }.take(60)
+        buildList {
+            add("Captured ${rawLines.size} recent process log lines for PID $pid; secrets and email-like values redacted.")
+            add("Potential diagnostic indicators: ${matches.size}")
+            matches.forEach { add(it.take(500)) }
+            if (matches.isEmpty()) add("No configured diagnostic markers found in this snapshot. This is not a malware verdict.")
+            add("Logcat is a short snapshot, not continuous monitoring. Reproduce the app flow before capturing.")
+        }
+    } catch (e: Exception) { listOf("Runtime log capture failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}") }
+}
+
 private fun classifyFinding(finding: String): Pair<String, String> {
     val value = finding.lowercase()
     return when {
@@ -844,6 +872,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
     var backupMessage by remember { mutableStateOf("") }
     var comparisonMessage by remember { mutableStateOf("") }
     var shizukuReport by remember { mutableStateOf("") }
+    var runtimeLogReport by remember { mutableStateOf("") }
+    var logCaptureRunning by remember { mutableStateOf(false) }
     var shizukuRunning by remember { mutableStateOf(false) }
     var billingChecks by remember(app.pkg) { mutableStateOf(setOf<String>()) }
     var storageResult by remember { mutableStateOf("") }
@@ -1012,7 +1042,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
-                WorkspaceFeature("Malware behavior", "Runtime behavior and malware detection are not implemented in this build.", "NOT IMPLEMENTED")
+                WorkspaceFeature("Runtime log snapshot", "Capture recent process log entries via Shizuku after launching the app; common secret fields are redacted.", if (shizukuReady) "READY • SHIZUKU" else "SHIZUKU REQUIRED", installed),
+                WorkspaceFeature("Malware behavior", "Automated malware classification and continuous behavior monitoring are not implemented.", "NOT IMPLEMENTED")
             )),
             WorkspaceCategory("Permissions & privacy", "Understand what the app requests", listOf(
                 WorkspaceFeature("Permission inventory", "View every permission declared by this app.", "${app.permissions.size} FOUND", true),
@@ -1171,6 +1202,21 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     }
                                 }
                                 Text("Use Google Play test environment and test accounts. Checklist completion is a manual record, not automated billing verification.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            if (current.title == "Runtime log snapshot") {
+                                Button(onClick = {
+                                    installScope.launch {
+                                        logCaptureRunning = true
+                                        runtimeLogReport = "Capturing recent process logs…"
+                                        runtimeLogReport = captureRuntimeLogsWithShizuku(app.pkg).joinToString("\\n")
+                                        logCaptureRunning = false
+                                    }
+                                }, enabled = installed && shizukuReady && !logCaptureRunning, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                                    Text(if (logCaptureRunning) "Capturing…" else "Capture app log snapshot")
+                                }
+                                if (!shizukuReady) Text("Start Shizuku and grant OMNI CYBER LAB permission. Launch the target app and reproduce the action before capturing.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                if (runtimeLogReport.isNotBlank()) Text(runtimeLogReport, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 9.dp))
+                                Text("A limited, user-triggered snapshot. Sensitive values are redacted where recognized; review before sharing logs.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
                             if (current.title == "Shizuku package diagnostics") {
                                 Button(onClick = {
