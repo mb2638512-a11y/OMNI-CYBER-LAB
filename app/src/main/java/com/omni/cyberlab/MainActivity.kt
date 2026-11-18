@@ -1638,6 +1638,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             val runtimeSaved = runtimePrefs.getString(runtimeKey, "") ?: ""
             val runtimeNotes = runtimePrefs.getString("notes_" + app.pkg, "") ?: ""
             val runtimeStarted = runtimePrefs.getLong("started_" + app.pkg, 0L)
+            val runtimeEvidence = runtimePrefs.getString("evidence_" + app.pkg, "") ?: ""
             appendLine()
             appendLine("GUIDED RUNTIME TEST SESSION")
             appendLine("Started: " + if (runtimeStarted == 0L) "Not started" else java.text.DateFormat.getDateTimeInstance().format(java.util.Date(runtimeStarted)))
@@ -1647,6 +1648,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine(if (runtimeNotes.isBlank()) "- No notes recorded" else runtimeNotes)
             appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
+            if (runtimeEvidence.isNotBlank()) { appendLine(); appendLine("ATTACHED DEVICE DIAGNOSTIC EVIDENCE"); appendLine(runtimeEvidence) }
             if (runtimeLogReport.isNotBlank()) { appendLine(); appendLine("RUNTIME LOG TRIAGE SNAPSHOT"); appendLine(runtimeLogReport) }
             if (shizukuReport.isNotBlank()) { appendLine(); appendLine("SHIZUKU DIAGNOSTIC SNAPSHOT"); appendLine(shizukuReport) }
             appendLine()
@@ -2122,7 +2124,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
 
                             }
                             if (current.title == "Guided runtime test session") {
-                                GuidedRuntimeTestPanel(context, app.pkg)
+                                GuidedRuntimeTestPanel(context, app.pkg, runtimeLogReport, shizukuReport)
                             }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
@@ -2424,12 +2426,14 @@ private fun Check(label: String, state: String, tint: Color) {
 
 
 @Composable
-private fun GuidedRuntimeTestPanel(context: Context, packageName: String) {
+private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtimeLogReport: String, shizukuReport: String) {
     val checks = listOf("Launch and normal navigation", "Login, logout and session expiry", "Permission prompts and denial handling", "Background / foreground transition", "Airplane mode, reconnect and retry", "Invalid input and boundary handling", "Sensitive data not exposed in UI or logs", "Deep links and exported entry points", "Crash / ANR observation after test actions", "Purchase flow in official sandbox only")
     val prefs = remember(packageName) { context.getSharedPreferences("runtime_test_sessions", Context.MODE_PRIVATE) }
     val stateKey = "checks_" + packageName
     val noteKey = "notes_" + packageName
     val startedKey = "started_" + packageName
+    val evidenceKey = "evidence_" + packageName
+    var evidence by remember(packageName) { mutableStateOf(prefs.getString(evidenceKey, "") ?: "") }
     val completed = remember(packageName) { mutableStateListOf<Boolean>().apply { val saved = prefs.getString(stateKey, "") ?: ""; checks.indices.forEach { add(saved.getOrNull(it) == '1') } } }
     var notes by remember(packageName) { mutableStateOf(prefs.getString(noteKey, "") ?: "") }
     var startedAt by remember(packageName) { mutableStateOf(prefs.getLong(startedKey, 0L)) }
@@ -2450,7 +2454,23 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String) {
         }
         OutlinedTextField(value = notes, onValueChange = { notes = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Observations / evidence notes") }, minLines = 3)
         Button(onClick = { prefs.edit().putString(noteKey, notes).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save session notes") }
-        OutlinedButton(onClick = { completed.indices.forEach { completed[it] = false }; notes = ""; startedAt = 0L; prefs.edit().remove(stateKey).remove(noteKey).remove(startedKey).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear this app's session") }
-        Text("Progress and notes are stored locally on this device under this package name. No traffic interception, TLS bypass, payment unlocking or background monitoring is performed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+        val hasDiagnostics = runtimeLogReport.isNotBlank() || shizukuReport.isNotBlank()
+        Button(onClick = {
+            val stamp = java.text.DateFormat.getDateTimeInstance().format(java.util.Date())
+            val block = buildString {
+                appendLine("CAPTURED: " + stamp)
+                if (runtimeLogReport.isNotBlank()) { appendLine("PROCESS LOG TRIAGE (bounded snapshot)"); appendLine(runtimeLogReport.take(10000)) }
+                if (shizukuReport.isNotBlank()) { appendLine("SHIZUKU PACKAGE DIAGNOSTICS (read-only)"); appendLine(shizukuReport.take(10000)) }
+            }
+            evidence = (evidence + if (evidence.isBlank()) "" else "\n\n" + block).takeLast(24000)
+            prefs.edit().putString(evidenceKey, evidence).apply()
+        }, enabled = hasDiagnostics, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Attach latest diagnostics to session") }
+        if (evidence.isNotBlank()) {
+            Text("ATTACHED LOCAL EVIDENCE", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
+            Text(evidence.takeLast(1800), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+            TextButton(onClick = { evidence = ""; prefs.edit().remove(evidenceKey).apply() }) { Text("Clear attached evidence") }
+        }
+        OutlinedButton(onClick = { completed.indices.forEach { completed[it] = false }; notes = ""; startedAt = 0L; evidence = ""; prefs.edit().remove(stateKey).remove(noteKey).remove(startedKey).remove(evidenceKey).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear this app's session") }
+        Text("Diagnostics attach only when you tap the button. Evidence is bounded and stored locally; review sensitive details before sharing the PDF. No traffic interception, TLS bypass, payment unlocking or background monitoring is performed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
