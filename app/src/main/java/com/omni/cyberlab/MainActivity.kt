@@ -1008,6 +1008,17 @@ class MainActivity : ComponentActivity() {
                 var showAuthorization by remember { mutableStateOf(false) }
                 var importMessage by remember { mutableStateOf("") }
                 val context = androidx.compose.ui.platform.LocalContext.current
+                val shizukuPermissionListener = remember {
+                    Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+                        if (requestCode == 4107) {
+                            bridge = if (grantResult == PackageManager.PERMISSION_GRANTED) "Connected • permission granted" else "Connected • permission denied"
+                        }
+                    }
+                }
+                DisposableEffect(shizukuPermissionListener) {
+                    Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+                    onDispose { Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener) }
+                }
                 val scope = rememberCoroutineScope()
                 val apkPicker = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocument()
@@ -1209,6 +1220,29 @@ class MainActivity : ComponentActivity() {
                                                 modifier = Modifier.padding(top = 4.dp))
                                             Text("OPTIONAL • Shizuku / ADB diagnostics with separately granted access", color = Orange, fontSize = 11.sp,
                                                 modifier = Modifier.padding(top = 4.dp))
+                                            Text("SHIZUKU STATUS • $bridge", color = if (bridge.contains("granted", true)) Green else Orange,
+                                                fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                                OutlinedButton(onClick = { bridgeStatus() }, modifier = Modifier.weight(1f)) {
+                                                    Text("Refresh bridge", fontSize = 10.sp)
+                                                }
+                                                Button(onClick = {
+                                                    try {
+                                                        if (!Shizuku.pingBinder()) {
+                                                            Toast.makeText(context, "Start Shizuku service, then refresh this panel.", Toast.LENGTH_LONG).show()
+                                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:moe.shizuku.privileged.api")))
+                                                        } else if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                                                            bridgeStatus()
+                                                        } else {
+                                                            Shizuku.requestPermission(4107)
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Shizuku unavailable: ${e.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }, modifier = Modifier.weight(1f)) {
+                                                    Text("Request Shizuku access", fontSize = 10.sp)
+                                                }
+                                            }
                                             Text("USER GRANT • Usage statistics and app-usage visibility", color = Orange, fontSize = 11.sp,
                                                 modifier = Modifier.padding(top = 4.dp))
                                             Text("SANDBOXED • Another app's private files, live memory and protected runtime state are not universally readable by an ordinary Android app. Root, a debuggable build, or owner-provided test hooks may be required.", color = Grey, fontSize = 10.sp,
