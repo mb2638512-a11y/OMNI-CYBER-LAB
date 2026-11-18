@@ -160,6 +160,32 @@ private fun applyOwnerAdConfigPatch(source: File, output: File): OwnerAdPatchRes
     return OwnerAdPatchResult(changed, changedFlags)
 }
 
+
+internal fun buildTamperProbeApk(source: File, output: File): File {
+    require(source.isFile && source.length() in 1..(100L * 1024L * 1024L)) { "Select an APK up to 100 MB." }
+    val markerName = "assets/lucky_patches_tamper_probe.txt"
+    ZipFile(source).use { zip ->
+        require(zip.getEntry(markerName) == null) { "This APK already contains the tamper-probe marker." }
+        ZipOutputStream(output.outputStream().buffered()).use { out ->
+            val entries = zip.entries(); var count = 0; var total = 0L
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                require(++count <= 8000) { "APK exceeds the 8,000-entry limit." }
+                if (entry.isDirectory) continue
+                if (entry.name.startsWith("META-INF/") && listOf(".RSA", ".DSA", ".EC", ".SF", "MANIFEST.MF").any { entry.name.endsWith(it, true) }) continue
+                require(entry.size in 0..(30L * 1024L * 1024L)) { "An APK entry exceeds the 30 MB limit." }
+                val bytes = zip.getInputStream(entry).use { it.readBytes() }
+                total += bytes.size; require(total <= 150L * 1024L * 1024L) { "Expanded APK exceeds the 150 MB limit." }
+                out.putNextEntry(ZipEntry(entry.name).apply { time = entry.time; comment = entry.comment }); out.write(bytes); out.closeEntry()
+            }
+            val marker = "LUCKY PATCHES DEFENSIVE TAMPER PROBE\nProbe: inert asset insertion only\nPurpose: validate signature and repackaging detection in a controlled test environment\n".toByteArray(Charsets.UTF_8)
+            total += marker.size; require(total <= 150L * 1024L * 1024L) { "Expanded APK exceeds the 150 MB limit." }
+            out.putNextEntry(ZipEntry(markerName)); out.write(marker); out.closeEntry()
+        }
+    }
+    return output
+}
+
 private fun apkDiffSummary(before: File, after: File): String {
     fun hashes(file: File): Map<String, String> = ZipFile(file).use { zip ->
         val out = linkedMapOf<String, String>()
@@ -190,7 +216,7 @@ private fun apkDiffSummary(before: File, after: File): String {
 fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPath: String?, initialTab: Int = 0, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val prefs = remember(context, packageName) { context.getSharedPreferences("omni_advanced_labs", Context.MODE_PRIVATE) }
-    var tab by remember(packageName, initialTab) { mutableStateOf(initialTab.coerceIn(0, 1)) }
+    var tab by remember(packageName, initialTab) { mutableStateOf(initialTab.coerceIn(0, 2)) }
     var entries by remember { mutableStateOf(emptyList<String>()) }
     var selectedEntry by remember { mutableStateOf("") }
     var editedText by remember { mutableStateOf("") }
@@ -233,6 +259,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
         TabRow(selectedTabIndex = tab, containerColor = LabPanel) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("APK PATCH LAB", fontSize = 10.sp) })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("IAP / LICENSE SIM", fontSize = 10.sp) })
+            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("TAMPER QA", fontSize = 10.sp) })
         }
         if (tab == 0) {
             Text("OWNER AD-CONFIG PATCH • REAL APK RESOURCE EDIT", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
@@ -284,7 +311,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
             }
             Text("STATUS: $patchStatus", color = LabMuted, fontSize = 10.sp)
             Text("Supported now: bounded text files under assets/ and res/raw/. The builder preserves other ZIP entries, removes stale APK signature files, and outputs an unsigned APK. Binary AndroidManifest.xml, compiled resources.arsc, layouts, icons, native libraries and DEX are not edited by this patcher. Existing Smali DEX workflow remains separate. Sign with your own key and verify the output before install.", color = LabWarn, fontSize = 9.sp)
-        } else {
+        } else if (tab == 1) {
             Text("SIMULATED BILLING + LICENSE STATE MACHINE", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             OutlinedTextField(value = productId, onValueChange = { productId = it.take(180) }, modifier = Modifier.fillMaxWidth(), label = { Text("Your test product ID") }, singleLine = true)
             Text("Current simulated entitlement: $purchaseState", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -301,6 +328,36 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
             Text("EVENT AUDIT LOG", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 10.sp)
             if (eventLog.isBlank()) Text("No simulated events yet.", color = LabMuted, fontSize = 10.sp) else LazyColumn(Modifier.heightIn(max = 220.dp)) { items(eventLog.lines()) { Text(it, color = LabMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 3.dp)) } }
             Text("Production integration still requires your own Play Console license testers, test-track product IDs, official Play Billing client, server-side purchase-token verification, idempotent entitlement service, acknowledgement/consumption, RTDN handling and audit logging. This local simulator is a QA harness, not a replacement for those systems.", color = LabWarn, fontSize = 9.sp)
+        } else {
+            Text("UNTRUSTED APK • REPACKAGING / SIGNATURE TAMPER QA", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            Text("Analyze an APK without installing or launching it. This creates a separate test copy with one inert marker asset and removes stale signature metadata. It does not change DEX, manifest, resources, ads, purchases, licenses or app behavior.", color = LabWarn, fontSize = 10.sp)
+            Text("Source: " + (apkPath?.let { File(it).name } ?: "No APK imported"), color = LabMuted, fontSize = 10.sp)
+            Button(onClick = {
+                scope.launch {
+                    busy = true
+                    try {
+                        val srcPath = apkPath ?: error("Import an APK first.")
+                        val probe = withContext(Dispatchers.IO) {
+                            val src = File(srcPath)
+                            val out = File(context.cacheDir, "lucky-patches-tamper-probe-" + System.currentTimeMillis() + ".apk")
+                            buildTamperProbeApk(src, out); out
+                        }
+                        patchedFile = probe
+                        diffReport = withContext(Dispatchers.IO) { apkDiffSummary(File(srcPath), probe) }
+                        patchStatus = "TAMPER PROBE CREATED • inert marker asset added • stale signature metadata removed • output is unsigned. Use only in an isolated test device/lab."
+                    } catch (e: Exception) { patchStatus = "TAMPER PROBE FAILED: " + (e.message ?: "unknown error") }
+                    busy = false
+                }
+            }, enabled = !busy && !apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text(if (busy) "Creating probe…" else "Create tamper-test APK copy")
+            }
+            Button(onClick = { exportLauncher.launch("lucky-patches-tamper-probe.apk") }, enabled = patchedFile?.isFile == true, modifier = Modifier.fillMaxWidth()) { Text("Export tamper-test APK") }
+            if (diffReport.isNotBlank()) {
+                Text(diffReport, color = LabMuted, fontSize = 9.sp)
+                OutlinedButton(onClick = { diffExportLauncher.launch("lucky-patches-tamper-report.txt") }, modifier = Modifier.fillMaxWidth()) { Text("Export tamper evidence report") }
+            }
+            Text("Expected result: Android signature verification should reject the modified unsigned package until it is signed. Re-signing with a different certificate should produce a signer mismatch against the original. This validates defensive detection; it does not defeat the check or preserve the original developer identity.", color = LabWarn, fontSize = 9.sp)
+            Text("STATUS: $patchStatus", color = LabMuted, fontSize = 10.sp)
         }
     }
 }
