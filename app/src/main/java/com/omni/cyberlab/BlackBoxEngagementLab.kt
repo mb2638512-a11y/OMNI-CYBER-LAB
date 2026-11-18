@@ -137,6 +137,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 Text("Last result: HTTP ${p.optInt("statusCode")} • ${p.optLong("durationMs")} ms", style = MaterialTheme.typography.bodyMedium)
                 Text("TLS: ${p.optString("tlsProtocol")} • ${p.optString("tlsCipher")}", style = MaterialTheme.typography.bodySmall)
                 Text("Certificate SHA-256: ${p.optString("certificateSha256")}", style = MaterialTheme.typography.labelSmall)
+                Text("Certificate valid now: ${p.optBoolean("certificateValidNow")} • Days remaining: ${p.optLong("certificateDaysRemaining")}", style = MaterialTheme.typography.bodySmall)
+                Text("Valid from: ${p.optString("certificateNotBefore")} • Expires: ${p.optString("certificateNotAfter")}", style = MaterialTheme.typography.labelSmall)
                 Text("Security headers: ${p.optJSONObject("securityHeaders")?.length() ?: 0} observed • Body bytes hashed: ${p.optInt("bodyBytesRead")}", style = MaterialTheme.typography.bodySmall)
             }
         }
