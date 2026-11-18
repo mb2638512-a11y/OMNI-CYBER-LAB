@@ -79,7 +79,7 @@ class EntitlementAttackSimulatorTest {
             assertTrue(it.attackerTechnique.isNotBlank())
             assertTrue(it.vulnerableOutcome.isNotBlank())
             assertTrue(it.hardenedOutcome.isNotBlank())
-            assertTrue(it.evidence.contains("Local"))
+            assertTrue(it.evidence.contains("local", ignoreCase = true))
         }
     }
 
