@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -43,6 +45,10 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var notes by remember(packageName) { mutableStateOf(prefs.getString("notes", "") ?: "") }
     var checked by remember(packageName) { mutableStateOf(blackBoxChecks.indices.filter { prefs.getBoolean("check_$it", false) }.toSet()) }
     var status by remember { mutableStateOf("Define the client scope before starting an engagement.") }
+    var endpoint by remember(packageName) { mutableStateOf(prefs.getString("probe_endpoint", "") ?: "") }
+    var probeMethod by remember(packageName) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
+    var probeBusy by remember { mutableStateOf(false) }
+    var probeResult by remember(packageName) { mutableStateOf(prefs.getString("probe_result", "") ?: "") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
@@ -57,6 +63,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("completedChecks", JSONArray(checked.sorted().map { blackBoxChecks[it] }))
                 .put("remainingChecks", JSONArray(blackBoxChecks.indices.filter { it !in checked }.map { blackBoxChecks[it] }))
                 .put("operatorNotes", notes)
+                .put("lastEndpointProbe", if (probeResult.isBlank()) JSONObject.NULL else JSONObject(probeResult))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -85,6 +92,37 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 Text(label, style = MaterialTheme.typography.bodySmall)
             }
         }
+        Divider()
+        Text("LIVE SCOPED HTTPS ENDPOINT PROBE", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Sends one GET or HEAD request to an exact allowlisted HTTPS hostname. Redirects are not followed; response bodies are hashed but not saved. No fuzzing, credential guessing or state-changing methods.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(endpoint, { endpoint = it; prefs.edit().putString("probe_endpoint", it).apply() }, label = { Text("HTTPS endpoint URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = probeMethod == "GET", onClick = { probeMethod = "GET"; prefs.edit().putString("probe_method", probeMethod).apply() }, label = { Text("GET") })
+            FilterChip(selected = probeMethod == "HEAD", onClick = { probeMethod = "HEAD"; prefs.edit().putString("probe_method", probeMethod).apply() }, label = { Text("HEAD") })
+        }
+        Button(onClick = {
+            val allowed = apiHosts.lines().map { it.trim().lowercase() }.filter { it.isNotBlank() }.map { raw -> runCatching { URI(if (raw.contains("://")) raw else "https://$raw").host?.lowercase() }.getOrNull() }.filterNotNull().toSet()
+            probeBusy = true
+            scope.launch {
+                try {
+                    val result = runScopedEndpointProbe(endpoint, allowed, probeMethod)
+                    probeResult = result.toJson().toString(2)
+                    prefs.edit().putString("probe_result", probeResult).apply()
+                    status = "Scoped endpoint probe complete: HTTP ${result.statusCode} in ${result.durationMs} ms."
+                } catch (e: Exception) { status = "Probe not completed: ${e.message ?: "unknown error"}" }
+                finally { probeBusy = false }
+            }
+        }, enabled = authorized && !probeBusy && endpoint.isNotBlank() && apiHosts.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (probeBusy) "Testing…" else "Run one scoped HTTPS check") }
+        if (probeResult.isNotBlank()) {
+            val p = runCatching { JSONObject(probeResult) }.getOrNull()
+            if (p != null) {
+                Text("Last result: HTTP ${p.optInt("statusCode")} • ${p.optLong("durationMs")} ms", style = MaterialTheme.typography.bodyMedium)
+                Text("TLS: ${p.optString("tlsProtocol")} • ${p.optString("tlsCipher")}", style = MaterialTheme.typography.bodySmall)
+                Text("Certificate SHA-256: ${p.optString("certificateSha256")}", style = MaterialTheme.typography.labelSmall)
+                Text("Security headers: ${p.optJSONObject("securityHeaders")?.length() ?: 0} observed • Body bytes hashed: ${p.optInt("bodyBytesRead")}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Text("This probe validates reachability and records response metadata; it does not prove an endpoint is vulnerable or secure.", style = MaterialTheme.typography.labelSmall)
         OutlinedTextField(notes, { notes = it; prefs.edit().putString("notes", it).apply() }, label = { Text("Evidence notes / findings references") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
         Button(onClick = { export.launch("omni-blackbox-${packageName}.json") }, enabled = authorized && target.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Export scoped test plan & evidence index") }
         Text(if (authorized) status else "Export is disabled until the operator confirms client authorization.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
