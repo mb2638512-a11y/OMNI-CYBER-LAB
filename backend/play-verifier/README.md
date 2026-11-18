@@ -51,3 +51,14 @@ go mod tidy
 go test ./...
 go run .
 ```
+
+
+## Local Docker Compose
+
+1. Copy `.env.example` to `.env` and replace every placeholder with your own values. Keep `.env` private and out of Git.
+2. Ensure the Google service account is granted the required Play Console access and that the Android Publisher API is enabled.
+3. Run `docker compose up --build -d` from this directory.
+4. The verifier binds to `127.0.0.1:8080` for local testing. Put it behind a properly configured HTTPS reverse proxy before any remote use.
+5. Configure product grants in PostgreSQL after the schema has been initialized. Example SQL is shown above.
+
+The Compose file exposes the verifier only on loopback by default and persists PostgreSQL in a named volume. This is a starter deployment, not a complete production hardening baseline.
