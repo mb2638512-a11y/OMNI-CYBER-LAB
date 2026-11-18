@@ -1,6 +1,6 @@
-# OMNI APK Resource Workbench (Windows)
+# OMNI APK Engineering Workbench (Windows + Android ARM64)
 
-A desktop companion for full Android binary-resource engineering in APKs you own or are explicitly authorized to modify. It uses the official Apktool 3.0.3 JAR and verifies its pinned SHA-256 before execution.
+A desktop and on-device companion for full Android APK decode/rebuild in APKs you own or are explicitly authorized to modify. Apktool decodes DEX to Smali source and rebuilds Smali into DEX; it does not reconstruct original Java/Kotlin source. It uses the official Apktool 3.0.3 JAR and verifies its pinned SHA-256 before execution.
 
 ## Requirements
 - Windows PowerShell 5.1 or PowerShell 7
@@ -14,10 +14,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\Invoke-OmniApkResourceWorkbench.ps1 -Action Decode -ApkPath "C:\APK\my-owner-app.apk" -WorkDir "C:\OMNI\my-owner-app-work" -ConfirmAuthorized
 ~~~
 
-The tool decodes AndroidManifest.xml, resources.arsc, layouts, values, drawables, mipmaps and other Apktool-supported resources. It records the original APK SHA-256 and a baseline inventory of resource files.
+The tool decodes AndroidManifest.xml, resources.arsc, layouts, values, drawables, mipmaps, assets and DEX into Smali folders. It records the original APK SHA-256 and a baseline inventory.
 
 ## Edit and rebuild
-Edit decoded res/ and assets/ content, then run:
+Edit decoded res/, assets/ and Smali source folders (smali/, smali_classes2/, etc.), then run:
 
 ~~~powershell
 .\Invoke-OmniApkResourceWorkbench.ps1 -Action Build -WorkDir "C:\OMNI\my-owner-app-work" -OutputApk "C:\OMNI\my-owner-app-rebuilt-unsigned.apk" -ConfirmAuthorized
@@ -29,7 +29,7 @@ The build produces an unsigned APK and two evidence files beside it:
 
 The report distinguishes archive/manifest/resource-table checks from signature verification and runtime/install tests. Signature is NOT TESTED unless Android apksigner is installed and available on PATH. Runtime and install tests are always NOT TESTED until separately performed. The original source APK is never overwritten, and an existing output path is never overwritten.
 
-The workspace stores a baseline resource inventory so the report can show file-level changes. A changed resource file is not proof that the app behaves correctly; install on a controlled device and repeat visual, localization, accessibility and functional tests.
+The workspace stores a baseline inventory so the report can show file-level changes. A changed resource or Smali file is not proof that the app behaves correctly; install on a controlled device and repeat visual, localization, accessibility and functional tests.
 
 ## Sign and verify
 Use your own keystore and Android SDK Build Tools:
