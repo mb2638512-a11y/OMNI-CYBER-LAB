@@ -10,6 +10,8 @@ This is a server-side reference service for apps you own or are authorized to as
 - `ALLOWED_PACKAGE_NAMES`: comma-separated exact package IDs.
 - `ALLOWED_PRODUCT_IDS`: comma-separated exact product IDs.
 - `PORT`: optional, defaults to 8080.
+- `PUBSUB_PUSH_AUDIENCE`: exact HTTPS audience configured on the Pub/Sub push subscription.
+- `PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL`: service-account email used by Pub/Sub to sign push OIDC tokens.
 
 The service account must be granted the required Play Console access and the Android Publisher API must be enabled. Run `schema.sql` against PostgreSQL before starting the service.
 
@@ -33,7 +35,9 @@ Example body:
 
 Use `purchaseType=product` for one-time products and `subscription` for subscriptions. Only exact allowlisted package and product IDs are accepted. The service calls Google Play Developer API; client-supplied price, balance, entitlement flags and purchase state are never trusted. Purchase tokens are SHA-256 hashed before persistence. A token already bound to another account is rejected; duplicate delivery is idempotent.
 
-The service returns an entitlement decision only after Google verification. Pending/canceled products are not entitled. Subscription entitlement is based on the matching product line item, recognized state and unexpired period. Reconcile subscription changes and revocations using Real-time Developer Notifications (RTDN) in production; this minimal verifier does not yet implement the Pub/Sub RTDN receiver or automatic acknowledgement/consumption.
+The service returns an entitlement decision only after Google verification. Pending/canceled products are not entitled. Subscription entitlement is based on the matching product line item, recognized state and unexpired period. Subscription changes are reconciled through `POST /v1/play/rtdn`. Configure a Pub/Sub push subscription with OIDC authentication, set the exact audience and expected service-account email, and grant the Pub/Sub service agent permission to mint the OIDC token. The handler validates the Google-signed token, checks package allowlists, fetches the current subscription state from Google Play, and updates the previously verified token record. Test notifications are acknowledged. Unknown tokens are acknowledged without granting entitlements; transient Google/API or database errors return a retryable failure.
+
+`POST /v1/play/acknowledge` and `POST /v1/play/consume` are trusted-backend operations for verified, entitled one-time products only. They re-check the server ledger and call the Google Play Developer API. Do not expose the verifier API key in an Android client. These endpoints do not apply to subscriptions; subscription acknowledgement and state management follow the subscription APIs and RTDN.
 
 ## Important production integration
 
@@ -42,7 +46,7 @@ The service returns an entitlement decision only after Google verification. Pend
 - Add rate limits, request IDs, structured audit logs, secret rotation and monitoring.
 - Do not grant consumable coins/gold from a client balance. Fulfil consumables in a separate server-side wallet ledger using a unique transaction key and a database transaction. This endpoint verifies a purchase but does not mint currency.
 - Keep test and production package IDs, products, service accounts and databases separate.
-- The service does not bypass licensing, forge receipts or alter third-party app entitlements.
+- The service does not bypass licensing, forge receipts or alter third-party app entitlements. It is for packages and products you own or are authorized to test.
 
 ## Local build
 
