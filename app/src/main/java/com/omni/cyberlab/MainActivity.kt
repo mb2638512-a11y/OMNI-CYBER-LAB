@@ -1199,6 +1199,46 @@ class MainActivity : ComponentActivity() {
                                         shape = RoundedCornerShape(16.dp)) {
                                         Column(Modifier.fillMaxWidth().padding(15.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("UNIVERSAL ACCESS READINESS", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Spacer(Modifier.weight(1f))
+                                                Text("DEVICE-CONTROLLED", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            Spacer(Modifier.height(8.dp))
+                                            Text("READY • Installed-app inventory and package metadata", color = Green, fontSize = 11.sp)
+                                            Text("READY • Imported APK static inspection, DEX/Smali and signing workflow", color = Green, fontSize = 11.sp,
+                                                modifier = Modifier.padding(top = 4.dp))
+                                            Text("OPTIONAL • Shizuku / ADB diagnostics with separately granted access", color = Orange, fontSize = 11.sp,
+                                                modifier = Modifier.padding(top = 4.dp))
+                                            Text("USER GRANT • Usage statistics and app-usage visibility", color = Orange, fontSize = 11.sp,
+                                                modifier = Modifier.padding(top = 4.dp))
+                                            Text("SANDBOXED • Another app's private files, live memory and protected runtime state are not universally readable by an ordinary Android app. Root, a debuggable build, or owner-provided test hooks may be required.", color = Grey, fontSize = 10.sp,
+                                                modifier = Modifier.padding(top = 7.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(onClick = {
+                                                    try {
+                                                        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                                    } catch (_: Exception) {
+                                                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                            Uri.parse("package:" + context.packageName)))
+                                                    }
+                                                }, modifier = Modifier.weight(1f)) {
+                                                    Text("Usage access", fontSize = 10.sp)
+                                                }
+                                                OutlinedButton(onClick = {
+                                                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                        Uri.parse("package:" + context.packageName)))
+                                                }, modifier = Modifier.weight(1f)) {
+                                                    Text("App permissions", fontSize = 10.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                item {
+                                    Card(colors = CardDefaults.cardColors(containerColor = CardBg),
+                                        shape = RoundedCornerShape(16.dp)) {
+                                        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text("SHIZUKU / ADB BRIDGE", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 Spacer(Modifier.weight(1f))
                                                 Text(if (bridge.startsWith("Connected")) "CONNECTED" else "OFFLINE",
