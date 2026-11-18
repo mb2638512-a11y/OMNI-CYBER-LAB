@@ -2576,11 +2576,21 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
             val added = nowMap.keys - oldMap.keys
             val disappeared = oldMap.keys - nowMap.keys
             val changed = nowMap.keys.intersect(oldMap.keys).filter { nowMap[it] != oldMap[it] }
+            val earlierSeen = mutableSetOf<String>()
+            for (historyIndex in 0 until (history.length() - 1).coerceAtLeast(0)) {
+                val older = history.optJSONObject(historyIndex)?.optJSONArray("findings") ?: continue
+                for (findingIndex in 0 until older.length()) {
+                    val line = older.optString(findingIndex)
+                    if (line.startsWith("[")) earlierSeen += line.substringAfter("] ").trim()
+                }
+            }
+            val reappeared = added.intersect(earlierSeen)
             comparison = if (previous == null) "BASELINE • First saved run; future runs will be compared against this snapshot."
                 else buildString {
                     append("Compared with previous run: ")
-                    append("New signals ${added.size} • No longer matched ${disappeared.size} • Severity changes ${changed.size}")
+                    append("New signals ${added.size} • Reappeared signals ${reappeared.size} • No longer matched ${disappeared.size} • Severity changes ${changed.size}")
                     if (added.isNotEmpty()) append("\nNew: " + added.joinToString())
+                    if (reappeared.isNotEmpty()) append("\nREGRESSION • Seen in an older snapshot, absent from the previous run, and present again: " + reappeared.joinToString())
                     if (disappeared.isNotEmpty()) append("\nNo longer matched (not proof of remediation): " + disappeared.joinToString())
                     if (changed.isNotEmpty()) append("\nSeverity changed: " + changed.joinToString { it + " (" + oldMap[it] + " → " + nowMap[it] + ")" })
                     if (added.isEmpty() && disappeared.isEmpty() && changed.isEmpty()) append("\nNo difference in configured rule matches.")
