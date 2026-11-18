@@ -1688,6 +1688,11 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             val hasTlsRuntime = listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor").any { runtimeEvidence.contains(it, true) || runtimeLogReport.contains(it, true) }
             val hasPermissionRuntime = runtimeEvidence.contains("SecurityException", true) || runtimeEvidence.contains("Permission Denial", true) || runtimeLogReport.contains("SecurityException", true) || runtimeLogReport.contains("Permission Denial", true)
             appendLine("RUNTIME TRIAGE LEVEL: " + when { hasFatalRuntime -> "HIGH • crash/ANR indicator"; hasTlsRuntime || hasPermissionRuntime -> "REVIEW • runtime indicator"; runtimeLogReport.isNotBlank() -> "NO MATCH • configured indicators absent in this snapshot"; else -> "NOT ASSESSED • no process log snapshot" })
+            val orchestratorPrefs = context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE)
+            val orchestratorReport = orchestratorPrefs.getString("report_" + app.pkg, "") ?: ""
+            appendLine()
+            appendLine("ONE-TAP SECURITY TEST ORCHESTRATOR")
+            appendLine(if (orchestratorReport.isBlank()) "No saved orchestrator run." else orchestratorReport)
             appendLine("Triage classification is heuristic and does not prove exploitability, safety or a vulnerability.")
             appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
@@ -2503,7 +2508,7 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
         Text("Non-invasive checks against currently available package metadata and bounded APK inventory. No target code is executed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
         Button(onClick = {
             val stamp = System.currentTimeMillis()
-            val body = buildSecurityTestSuite(app).joinToString("\\n")
+            val body = buildSecurityTestSuite(app).joinToString("\n")
             report = "OMNI CYBER LAB • SECURITY TEST RUN\\nApp: ${app.name} (${app.pkg})\\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\\n\\n" + body
             ranAt = stamp
             prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp).apply()
