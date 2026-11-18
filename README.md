@@ -206,3 +206,16 @@ This repository contains source code. A build is considered successful only when
 - Each scenario documents the attacker simulation, secure expected behavior and evidence to capture. Operators can record `PASS`, `FAIL`, `BLOCKED` or `NOT RUN`, add evidence notes, persist progress per package and export a JSON report. Active outcomes require the operator to confirm ownership or explicit client authorization.
 - These are guided/manual test cases, not an automated exploit engine. OMNI does not grant VIP, inject unlimited currency, forge real purchase receipts, bypass a third-party license, remove live ads or change a production game wallet. Use owner test builds, staging backends, test accounts and Play license testers.
 - For Play Billing, Google recommends server-side purchase-token verification before granting entitlements, not granting for `PENDING` purchases, unique token/idempotency handling and correct refund/revocation processing. Use the official license tester and Play Billing Lab workflows for test purchases. See [Google Play Billing integration](https://developer.android.com/google/play/billing/integrate), [fraud and abuse guidance](https://developer.android.com/google/play/billing/security) and [billing test guide](https://developer.android.com/google/play/billing/test).
+
+
+### Server-side Google Play verification backend
+
+- A separate Go service now verifies one-time product and subscription purchase tokens directly with the Google Play Developer API. It checks exact package/product allowlists, rejects pending one-time purchases, evaluates subscription product/state/expiry, hashes tokens before storage, prevents a token from being rebound to another user and records verification in PostgreSQL.
+- Source: `backend/play-verifier/`. Apply `schema.sql`, configure the required server-side environment variables and deploy behind HTTPS. A dedicated GitHub Actions workflow runs `go test`, `go vet` and `go build`.
+- The service-account JSON and API key are server secrets only. Never place them in OMNI's APK. A trusted app backend must authenticate the user and call this verifier; do not expose a shared verifier API key to an untrusted mobile client.
+- Current scope is token verification and idempotent verification records. It does not yet implement RTDN/Pub/Sub reconciliation, automatic acknowledgement/consumption, or a consumable-currency wallet ledger. Those remain separate production requirements. The service does not mint coins or gold.
+
+### Full APK resource decode / rebuild companion
+
+- The Android app now links to `tools/apktool-workbench/`, a Windows PowerShell companion that downloads official Apktool 3.0.3, verifies the pinned SHA-256, decodes the manifest/resources, provides an editable project folder and rebuilds an unsigned APK.
+- Re-import the rebuilt APK into OMNI for signing and validation. This full decode/rebuild workflow currently runs on Windows with Java 17+; it is not an on-device APKTool runtime. The existing Android text-entry patcher remains available for bounded `assets/` and `res/raw/` edits.
