@@ -1,7 +1,6 @@
 package com.omni.cyberlab
 
 import kotlinx.coroutines.Dispatchers
-import android.os.Build
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URI
@@ -60,12 +59,19 @@ suspend fun runScopedEndpointProbe(rawUrl: String, allowedHosts: Set<String>, me
         val headerNames = listOf("Strict-Transport-Security", "Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Cache-Control", "Server")
         val headers = headerNames.mapNotNull { key -> connection.getHeaderField(key)?.let { key to it.take(512) } }.toMap()
         val body = if (method == "GET") (if (status >= 400) connection.errorStream else connection.inputStream)?.use { input ->
-            val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; var read: Int
-            while (total < 65536 && input.read(buffer, 0, minOf(buffer.size, 65536 - total)).also { read = it } > 0) { output.write(buffer, 0, read); total += read }
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(4096)
+            var total = 0
+            while (total < 65536) {
+                val count = input.read(buffer, 0, minOf(buffer.size, 65536 - total))
+                if (count <= 0) break
+                output.write(buffer, 0, count)
+                total += count
+            }
             output.toByteArray()
         } ?: ByteArray(0) else ByteArray(0)
         val cert = connection.serverCertificates.firstOrNull() as? java.security.cert.X509Certificate
         val certHash = cert?.encoded?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02X".format(b) } } ?: ""
-        ScopedProbeResult(safeUrl, status, duration, connection.contentType ?: "", connection.getHeaderField("Content-Length") ?: "", headers, if (Build.VERSION.SDK_INT >= 29) connection.sslSession?.protocol ?: "" else "", connection.cipherSuite ?: "", cert?.subjectX500Principal?.name ?: "", cert?.issuerX500Principal?.name ?: "", certHash, body.size, if (body.isNotEmpty()) MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02X".format(it) } else "", "One HTTPS request only; redirects are not followed; response body is not stored. HTTP status and missing headers require manual interpretation.")
+        ScopedProbeResult(safeUrl, status, duration, connection.contentType ?: "", connection.getHeaderField("Content-Length") ?: "", headers, "", connection.cipherSuite ?: "", cert?.subjectX500Principal?.name ?: "", cert?.issuerX500Principal?.name ?: "", certHash, body.size, if (body.isNotEmpty()) MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02X".format(it) } else "", "One HTTPS request only; redirects are not followed; response body is not stored. HTTP status and missing headers require manual interpretation.")
     } finally { connection.disconnect() }
 }
