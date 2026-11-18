@@ -45,8 +45,8 @@ private val blackBoxChecks = listOf(
 fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modifier = Modifier) {
     val registryPrefs = remember(context, packageName) { context.getSharedPreferences("omni_blackbox_registry_$packageName", Context.MODE_PRIVATE) }
     var activeEngagementId by remember(packageName) { mutableStateOf(registryPrefs.getString("active_engagement_id", "default") ?: "default") }
-    var engagementRegistryJson by remember(packageName, activeEngagementId) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
-    var newEngagementTitle by remember(packageName, activeEngagementId) { mutableStateOf("Mobile application security assessment") }
+    var engagementRegistryJson by remember(packageName) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
+    var newEngagementTitle by remember(packageName) { mutableStateOf("Mobile application security assessment") }
     val prefs = remember(context, packageName, activeEngagementId) {
         if (activeEngagementId == "default") context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
         else context.getSharedPreferences("omni_blackbox_${packageName}_$activeEngagementId", Context.MODE_PRIVATE)
