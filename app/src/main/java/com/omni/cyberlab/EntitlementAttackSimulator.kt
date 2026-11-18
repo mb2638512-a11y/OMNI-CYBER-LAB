@@ -81,6 +81,29 @@ object EntitlementAttackSimulator {
             val b=strong.grant(Purchase("client-price","com.omni.demo","coins_100","alice","PURCHASED",false),"alice",999999)
             add("client_amount","Client-edited currency quantity","Request arbitrary coins from an untrusted client.","$a • balance=${weak.coins("alice")}","$b • balance=${strong.coins("alice")}",weak.coins("alice")>100,"Trusted product catalog must determine grants.")
         }
+
+        run {
+            val p=Purchase("expired-token","com.omni.demo","vip_monthly","alice","EXPIRED",true)
+            val a=DemoBackend(false).grant(p,"alice");val b=DemoBackend(true).grant(p,"alice")
+            add("expired_vip","Expired VIP renewal","Replay a previously valid but expired subscription state.",a,b,a.startsWith("ALLOW"),"Provider state=EXPIRED; protected access must stop at expiry.")
+        }
+        run {
+            val p=Purchase("refunded-token","com.omni.demo","vip_monthly","alice","REFUNDED",true)
+            val a=DemoBackend(false).grant(p,"alice");val b=DemoBackend(true).grant(p,"alice")
+            add("refunded","Refunded purchase replay","Attempt to restore VIP from a refunded purchase.",a,b,a.startsWith("ALLOW"),"Provider state=REFUNDED; entitlement must be revoked.")
+        }
+        run {
+            val weak=DemoBackend(false);val strong=DemoBackend(true)
+            val first=Purchase("swapped-token","com.omni.demo","vip_monthly","alice","PURCHASED",true)
+            val second=Purchase("swapped-token","com.omni.demo","coins_100","alice","PURCHASED",true)
+            weak.grant(first,"alice");val a=weak.grant(second,"alice",999)
+            strong.grant(first,"alice");val b=strong.grant(second,"alice",999)
+            add("token_product_swap","Token reused for another product","Reuse a verified purchase token against a different SKU.",a,b,a.startsWith("ALLOW"),"One purchase token must bind to one product identity.")
+        }
+        run {
+            val a=DemoBackend(false).spend("alice",0);val b=DemoBackend(true).spend("alice",0)
+            add("zero_spend","Zero-value wallet spend","Submit a zero-value transaction to pollute the wallet ledger.",a,b,a.startsWith("ALLOW"),"Zero and negative amounts must be rejected.")
+        }
         return out
     }
 }
