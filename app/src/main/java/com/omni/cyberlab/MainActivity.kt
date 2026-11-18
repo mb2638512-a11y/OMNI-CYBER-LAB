@@ -737,6 +737,26 @@ private fun runStructuredStaticChecks(app: AppRow): List<String> {
 }
 
 
+private fun securityTestCategory(title: String): String {
+    val value = title.lowercase()
+    return when {
+        value.contains("permission") || value.contains("component") -> "Permissions & Components"
+        value.contains("cleartext") || value.contains("network") || value.contains("tls") -> "Network Security"
+        value.contains("sign") || value.contains("identity") || value.contains("debug") -> "Build & Integrity"
+        value.contains("archive") || value.contains("dex") || value.contains("behavior") -> "Code & Package"
+        value.contains("runtime") || value.contains("backend") || value.contains("billing") -> "Runtime & Backend"
+        else -> "Configuration"
+    }
+}
+
+private fun securityTestPriority(statusLine: String): Int = when {
+    statusLine.startsWith("[REVIEW]") -> 0
+    statusLine.startsWith("[NOT RUN]") -> 1
+    statusLine.startsWith("[NOT AVAILABLE]") -> 2
+    statusLine.startsWith("[INFO]") -> 3
+    else -> 4
+}
+
 private fun buildSecurityTestSuite(app: AppRow): List<String> {
     val results = mutableListOf<String>()
     fun result(status: String, title: String, evidence: String, next: String) {
@@ -2601,6 +2621,23 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
                 }
             }
             Text("Not available: $unavailable • Not run: $notRun", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 6.dp))
+            Text("TEST INTELLIGENCE • PRIORITIZED NEXT ACTIONS", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
+            val categoryGroups = results.groupBy { securityTestCategory(it.substringAfter("] ").trim()) }
+            categoryGroups.forEach { (category, items) ->
+                val needsReview = items.count { it.startsWith("[REVIEW]") }
+                val notExecuted = items.count { it.startsWith("[NOT RUN]") }
+                Text("$category • ${items.size} checks • $needsReview review • $notExecuted not run",
+                    color = if (needsReview > 0) Orange else Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+            }
+            val prioritized = results.sortedBy { securityTestPriority(it) }.take(4)
+            prioritized.forEach { item ->
+                val title = item.substringAfter("] ").trim()
+                val detailIndex = report.lines().indexOf(item)
+                val lines = report.lines()
+                val nextStep = if (detailIndex >= 0 && detailIndex + 2 < lines.size) lines[detailIndex + 2] else ""
+                Text("• $title", color = if (item.startsWith("[REVIEW]")) Orange else Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
+                if (nextStep.isNotBlank()) Text(nextStep, color = Grey, fontSize = 8.sp)
+            }
             results.forEach { line ->
                 Text(line, color = when {
                     line.startsWith("[REVIEW]") -> Orange
