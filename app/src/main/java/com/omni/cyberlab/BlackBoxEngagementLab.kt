@@ -56,6 +56,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var evidenceJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("secure_evidence_index", "[]") ?: "[]") }
     var pendingEvidenceExportId by remember(packageName, activeEngagementId) { mutableStateOf("") }
     var backupPassphrase by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var showBackupRestoreConfirm by remember(packageName, activeEngagementId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var target by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
     var clientName by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
@@ -414,7 +415,14 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         OutlinedTextField(backupPassphrase, { backupPassphrase = it }, label = { Text("Backup passphrase (12+ characters)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { workspaceBackupExport.launch("omni-workspace-backup.ocb") }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Export encrypted") }
-            OutlinedButton(onClick = { workspaceBackupImport.launch(arrayOf("application/octet-stream", "*/*")) }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Restore backup") }
+            OutlinedButton(onClick = { showBackupRestoreConfirm = true }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Restore backup") }
+        }
+        if (showBackupRestoreConfirm) {
+            AlertDialog(onDismissRequest = { showBackupRestoreConfirm = false },
+                title = { Text("Replace this workspace from backup?") },
+                text = { Text("Restoring replaces the selected workspace records and encrypted evidence attachments. Only continue if this is the correct backup and workspace. You will need to reconfirm client authorization afterward.") },
+                confirmButton = { TextButton(onClick = { showBackupRestoreConfirm = false; workspaceBackupImport.launch(arrayOf("application/octet-stream", "*/*")) }) { Text("Choose backup") } },
+                dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false }) { Text("Cancel") } })
         }
         Divider()
         Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
