@@ -1693,6 +1693,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine()
             appendLine("ONE-TAP SECURITY TEST ORCHESTRATOR")
             appendLine(if (orchestratorReport.isBlank()) "No saved orchestrator run." else orchestratorReport)
+            appendLine("REGRESSION HISTORY: " + (orchestratorPrefs.getString("comparison_" + app.pkg, "") ?: "No comparison saved"))
+            appendLine("Saved snapshots: " + try { org.json.JSONArray(orchestratorPrefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 })
             appendLine("Triage classification is heuristic and does not prove exploitability, safety or a vulnerability.")
             appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
@@ -2497,6 +2499,8 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
     val prefs = remember(app.pkg) { context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE) }
     var report by remember(app.pkg) { mutableStateOf(prefs.getString("report_" + app.pkg, "") ?: "") }
     var ranAt by remember(app.pkg) { mutableStateOf(prefs.getLong("ran_at_" + app.pkg, 0L)) }
+    var comparison by remember(app.pkg) { mutableStateOf(prefs.getString("comparison_" + app.pkg, "") ?: "") }
+    var historyCount by remember(app.pkg) { mutableIntStateOf(try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 }) }
     val results = remember(report) { report.lines().filter { it.startsWith("[") } }
     val pass = results.count { it.startsWith("[PASS]") }
     val review = results.count { it.startsWith("[REVIEW]") }
@@ -2508,13 +2512,43 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
         Text("Non-invasive checks against currently available package metadata and bounded APK inventory. No target code is executed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
         Button(onClick = {
             val stamp = System.currentTimeMillis()
-            val body = buildSecurityTestSuite(app).joinToString("\n")
-            report = "OMNI CYBER LAB • SECURITY TEST RUN\\nApp: ${app.name} (${app.pkg})\\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\\n\\n" + body
+            val suite = buildSecurityTestSuite(app)
+            val currentFindings = suite.filter { it.startsWith("[") }
+            val historyKey = "history_" + app.pkg
+            val history = try { org.json.JSONArray(prefs.getString(historyKey, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+            val previous = if (history.length() > 0) history.optJSONObject(history.length() - 1) else null
+            fun indexed(items: List<String>): Map<String, String> = items.associate { line ->
+                val title = line.substringAfter("] ").trim()
+                title to line.substringBefore("]")
+            }
+            val nowMap = indexed(currentFindings)
+            val oldMap = indexed(if (previous == null) emptyList() else (0 until previous.optJSONArray("findings").length()).map { previous.optJSONArray("findings").optString(it) })
+            val added = nowMap.keys - oldMap.keys
+            val disappeared = oldMap.keys - nowMap.keys
+            val changed = nowMap.keys.intersect(oldMap.keys).filter { nowMap[it] != oldMap[it] }
+            comparison = if (previous == null) "BASELINE • First saved run; future runs will be compared against this snapshot."
+                else buildString {
+                    append("Compared with previous run: ")
+                    append("New signals ${added.size} • No longer matched ${disappeared.size} • Severity changes ${changed.size}")
+                    if (added.isNotEmpty()) append("\\nNew: " + added.joinToString())
+                    if (disappeared.isNotEmpty()) append("\\nNo longer matched (not proof of remediation): " + disappeared.joinToString())
+                    if (changed.isNotEmpty()) append("\\nSeverity changed: " + changed.joinToString { it + " (" + oldMap[it] + " → " + nowMap[it] + ")" })
+                    if (added.isEmpty() && disappeared.isEmpty() && changed.isEmpty()) append("\\nNo difference in configured rule matches.")
+                }
+            val snapshot = org.json.JSONObject().put("timestamp", stamp).put("findings", org.json.JSONArray(currentFindings))
+            history.put(snapshot)
+            while (history.length() > 10) history.remove(0)
+            historyCount = history.length()
+            val body = suite.joinToString("\\n")
+            report = "OMNI CYBER LAB • SECURITY TEST RUN\\nApp: ${app.name} (${app.pkg})\\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\\n\\n" + comparison + "\\n\\n" + body
             ranAt = stamp
-            prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp).apply()
+            prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp)
+                .putString(historyKey, history.toString()).putString("comparison_" + app.pkg, comparison).apply()
         }, modifier = Modifier.fillMaxWidth()) { Text("Run security test suite") }
         if (ranAt > 0L) {
             Text("Last run: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(ranAt)), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+            Text("HISTORY • $historyCount / 10 saved snapshots", color = Blue, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+            Text(comparison, color = if (comparison.contains("New signals") && !comparison.contains("New signals 0")) Orange else Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("PASS" to pass, "REVIEW" to review, "INFO" to info).forEach { (label, count) ->
                     Column(Modifier.weight(1f).background(CardBg, RoundedCornerShape(10.dp)).padding(8.dp)) {
@@ -2549,7 +2583,10 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
             TextButton(onClick = {
                 report = ""
                 ranAt = 0L
-                prefs.edit().remove("report_" + app.pkg).remove("ran_at_" + app.pkg).apply()
+                comparison = ""
+                historyCount = 0
+                prefs.edit().remove("report_" + app.pkg).remove("ran_at_" + app.pkg)
+                    .remove("comparison_" + app.pkg).remove("history_" + app.pkg).apply()
             }) { Text("Clear saved test run") }
         } else {
             Text("No test run saved yet. Run the suite to create a timestamped report.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
