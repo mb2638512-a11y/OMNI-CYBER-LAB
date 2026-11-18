@@ -145,6 +145,25 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                     val value = observedHeaders?.optString(header).orEmpty()
                     Text("${if (value.isBlank()) "REVIEW • not observed" else "OBSERVED"} — $header${if (value.isNotBlank()) ": ${value.take(160)}" else ""}", style = MaterialTheme.typography.labelSmall)
                 }
+                val hsts = observedHeaders?.optString("Strict-Transport-Security").orEmpty()
+                val csp = observedHeaders?.optString("Content-Security-Policy").orEmpty()
+                val xcto = observedHeaders?.optString("X-Content-Type-Options").orEmpty()
+                val hstsAge = Regex("max-age\\s*=\\s*(\\d+)", RegexOption.IGNORE_CASE).find(hsts)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                Text("PASSIVE HEADER REVIEW", style = MaterialTheme.typography.labelLarge)
+                val headerReviews = buildList {
+                    if (hsts.isBlank()) add("REVIEW • HSTS was not observed on this response.")
+                    else if (hstsAge == null || hstsAge < 15552000L) add("REVIEW • HSTS max-age is missing or below the six-month baseline; assess deployment policy.")
+                    if (csp.isBlank()) add("REVIEW • CSP was not observed; confirm whether this endpoint serves browser-rendered content.")
+                    else {
+                        if (Regex("unsafe-inline", RegexOption.IGNORE_CASE).containsMatchIn(csp)) add("REVIEW • CSP contains unsafe-inline; assess whether nonces or hashes can replace it.")
+                        if (Regex("unsafe-eval", RegexOption.IGNORE_CASE).containsMatchIn(csp)) add("REVIEW • CSP contains unsafe-eval; assess whether dynamic evaluation is required.")
+                        if (Regex("(?:^|;)\\s*default-src\\s+\\*", RegexOption.IGNORE_CASE).containsMatchIn(csp)) add("REVIEW • CSP default-src uses a wildcard source.")
+                    }
+                    if (!xcto.equals("nosniff", true)) add("REVIEW • X-Content-Type-Options is not observed as nosniff.")
+                    if (isEmpty()) add("No basic header review signals were raised by these heuristics.")
+                }
+                headerReviews.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Text("Heuristic observations only: header policy depends on endpoint role, browser exposure and the client security standard.", style = MaterialTheme.typography.labelSmall)
                 if (!p.optBoolean("certificateValidNow")) Text("REVIEW • peer certificate is not currently valid according to device clock.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 else if (p.optLong("certificateDaysRemaining") in 0L..30L) Text("REVIEW • peer certificate expires within 30 days.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
