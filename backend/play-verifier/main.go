@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -114,7 +115,7 @@ func (s *server) verify(w http.ResponseWriter, r *http.Request) {
 	if err == nil && existingUser != req.UserID {
 		writeJSON(w, http.StatusConflict, map[string]string{"error":"purchase token is already bound to a different account"}); return
 	}
-	if err != nil && err.Error() != "no rows in result set" {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"ledger lookup failed"}); return
 	}
 	_, err = s.db.Exec(ctx, `INSERT INTO play_purchase_ledger(token_sha256, package_name, product_id, purchase_type, user_id, purchase_state, entitled, verified_at)
