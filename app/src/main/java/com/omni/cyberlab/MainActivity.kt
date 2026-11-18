@@ -1449,6 +1449,8 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Smali DEX disassembly" -> listOf("Extract DEX entries and disassemble them to Smali source using Baksmali.", "This is bytecode disassembly, not Java/Kotlin source reconstruction. Resources and binary AndroidManifest.xml are not decoded here.")
         "Billing & SDK inventory" -> app.archiveInventory.filter { it.contains("SDK marker") }.ifEmpty { listOf("No configured SDK marker matched the sampled DEX strings. This does not prove the SDK is absent.") }
         "Rebuild APK from Smali" -> listOf("Import the ZIP exported by Smali DEX disassembly after editing its .smali files.", "Matching smali-N folders are assembled into the original DEX entries; old APK signature files are removed. The result is unsigned and must be signed with your own key.")
+        "Advanced APK modification lab" -> listOf("Edit bounded UTF-8 text entries under assets/ and res/raw/ in an APK you own or are authorized to modify.", "The output is unsigned and old APK signature blocks are removed; sign with your own key and validate before installation.", "Compiled resources, binary manifest, DEX and native libraries are not edited by this text patcher.")
+        "License / IAP emulation lab" -> listOf("Run local mock purchase and license-state transitions for your own application.", "Mock events do not contact Google Play, grant real entitlements, or bypass third-party licensing.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
             add("Exported component count: " + app.exportedComponents.size + ".")
@@ -1824,6 +1826,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Binary manifest & XML decode", "Decode binary XML, inspect resource-table locale configurations and resolve localized manifest labels where available.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • AXML DECODE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Smali DEX disassembly", "Disassemble DEX bytecode into Smali source files and export a ZIP for authorized code review.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • DISASSEMBLE", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Rebuild APK from Smali", "Reassemble edited Smali source into the matching DEX entries and produce an unsigned APK for your own app.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • REBUILD", !app.apkPath.isNullOrBlank()),
+                WorkspaceFeature("Advanced APK modification lab", "Inspect and edit bounded text assets in an authorized APK, rebuild an unsigned package, then sign and verify it with your own key.", if (app.apkPath.isNullOrBlank()) "APK REQUIRED" else "READY • PATCH LAB", !app.apkPath.isNullOrBlank()),
                 WorkspaceFeature("Compare APK builds", "Compare another APK against this app: package, version, signer, permissions and exported components.", "READY • SELECT APK", true),
                 WorkspaceFeature("Debug & exported components", "Review debug flags and externally reachable components.", if (app.debug || app.exported > 0) "REVIEW" else "CHECKED", true),
                 WorkspaceFeature("Cleartext traffic policy", "Check the manifest cleartext-traffic setting.", if (app.findings.any { it.contains("Cleartext") }) "REVIEW" else "NO FLAG", true),
@@ -1856,7 +1859,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 WorkspaceFeature("Subscriptions", "Subscription status must be checked through the official store/account.", "NOT CONNECTED"),
                 WorkspaceFeature("Billing & SDK inventory", "Identify common Play Billing, ads, analytics and Play Integrity SDK references in sampled DEX strings.", if (app.archiveInventory.any { it.contains("SDK marker") }) "SDK MARKERS FOUND" else if (app.archiveInventory.isEmpty()) "DEX UNAVAILABLE" else "NO MATCH IN SAMPLE", !app.archiveInventory.isEmpty()),
                 WorkspaceFeature("Coins, gold & virtual items", "Virtual currency balances and purchase records are not read.", "NOT ACCESSIBLE"),
-                WorkspaceFeature("License integrity", "No license bypass or payment unlocking. Verification is not implemented.", "NOT IMPLEMENTED")
+                WorkspaceFeature("License integrity", "No license bypass or payment unlocking. Verification is not implemented.", "NOT IMPLEMENTED"),
+                WorkspaceFeature("License / IAP emulation lab", "Simulate owner-controlled purchase, pending, cancel, expiry, refund, grace-period, account-hold, restore and invalid-license test events.", "READY • LOCAL SIMULATOR", true)
             )),
             WorkspaceCategory("Appearance & identity", "Plan a custom app presentation", listOf(
                 WorkspaceFeature("Display name", "Preview a custom label inside this workspace. Android's installed app label is not changed.", "PREVIEW ONLY", true),
@@ -1944,6 +1948,8 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                            if (current.title == "Advanced APK modification lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 0, modifier = Modifier.padding(top = 12.dp))
+                            if (current.title == "License / IAP emulation lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 1, modifier = Modifier.padding(top = 12.dp))
                             if (featureResults.isNotEmpty()) {
                                 Text("AUTOMATED RESULT", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 featureResults.forEach { result ->
