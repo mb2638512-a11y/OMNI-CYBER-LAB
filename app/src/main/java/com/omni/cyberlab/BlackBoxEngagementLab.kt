@@ -66,6 +66,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var probeHistoryJson by remember(packageName) { mutableStateOf(prefs.getString("probe_history", "[]") ?: "[]") }
     var findingTitle by remember(packageName) { mutableStateOf("") }
     var findingSeverity by remember(packageName) { mutableStateOf("MEDIUM") }
+    var findingCvss by remember(packageName) { mutableStateOf("") }
+    var findingCwe by remember(packageName) { mutableStateOf("") }
     var findingSteps by remember(packageName) { mutableStateOf("") }
     var findingImpact by remember(packageName) { mutableStateOf("") }
     var findingFix by remember(packageName) { mutableStateOf("") }
@@ -384,15 +386,17 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 FilterChip(selected = findingSeverity == level, onClick = { findingSeverity = level }, label = { Text(level) })
             }
         }
+        OutlinedTextField(findingCvss, { findingCvss = it }, label = { Text("CVSS v3.1 base score (optional, 0.0–10.0)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(findingCwe, { findingCwe = it }, label = { Text("CWE reference (optional, e.g. CWE-862)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(findingSteps, { findingSteps = it }, label = { Text("Reproduction steps / preconditions") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
         OutlinedTextField(findingImpact, { findingImpact = it }, label = { Text("Observed impact and evidence reference") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
         OutlinedTextField(findingFix, { findingFix = it }, label = { Text("Recommended remediation") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
         Button(onClick = {
             val arr = runCatching { JSONArray(findingsJson) }.getOrElse { JSONArray() }
-            arr.put(JSONObject().put("id", "F-${System.currentTimeMillis()}").put("title", findingTitle.trim()).put("severity", findingSeverity).put("reproduction", findingSteps).put("impactEvidence", findingImpact).put("remediation", findingFix).put("status", "UNVERIFIED • NEEDS REVIEW").put("createdAt", DateFormat.getDateTimeInstance().format(Date())))
+            arr.put(JSONObject().put("id", "F-${System.currentTimeMillis()}").put("title", findingTitle.trim()).put("severity", findingSeverity).put("cvssBaseScore", findingCvss.toFloatOrNull()?.takeIf { it in 0f..10f } ?: JSONObject.NULL).put("cweReference", findingCwe.trim()).put("reproduction", findingSteps).put("impactEvidence", findingImpact).put("remediation", findingFix).put("status", "UNVERIFIED • NEEDS REVIEW").put("createdAt", DateFormat.getDateTimeInstance().format(Date())))
             findingsJson = arr.toString()
             prefs.edit().putString("findings_json", findingsJson).apply()
-            findingTitle = ""; findingSteps = ""; findingImpact = ""; findingFix = ""
+            findingTitle = ""; findingCvss = ""; findingCwe = ""; findingSteps = ""; findingImpact = ""; findingFix = ""
             status = "Finding record saved locally. Severity is operator-assigned, not automatically validated."
         }, enabled = authorized && findingTitle.isNotBlank() && findingSteps.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save evidence-backed finding") }
         val savedFindings = runCatching { JSONArray(findingsJson) }.getOrElse { JSONArray() }
