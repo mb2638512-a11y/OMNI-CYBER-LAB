@@ -1654,6 +1654,14 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             runtimeChecks.forEachIndexed { index, label -> appendLine("  [" + (if (runtimeSaved.getOrNull(index) == '1') "X" else " ") + "] " + label) }
             appendLine("Observations:")
             appendLine(if (runtimeNotes.isBlank()) "- No notes recorded" else runtimeNotes)
+            val runtimeTimeline = runtimePrefs.getString("timeline_" + app.pkg, "") ?: ""
+            appendLine("SESSION EVENT TIMELINE:")
+            appendLine(if (runtimeTimeline.isBlank()) "- No timeline events recorded" else runtimeTimeline)
+            val hasFatalRuntime = runtimeEvidence.contains("FATAL EXCEPTION", true) || runtimeEvidence.contains("ANR in", true) || runtimeLogReport.contains("FATAL EXCEPTION", true) || runtimeLogReport.contains("ANR in", true)
+            val hasTlsRuntime = listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor").any { runtimeEvidence.contains(it, true) || runtimeLogReport.contains(it, true) }
+            val hasPermissionRuntime = runtimeEvidence.contains("SecurityException", true) || runtimeEvidence.contains("Permission Denial", true) || runtimeLogReport.contains("SecurityException", true) || runtimeLogReport.contains("Permission Denial", true)
+            appendLine("RUNTIME TRIAGE LEVEL: " + when { hasFatalRuntime -> "HIGH • crash/ANR indicator"; hasTlsRuntime || hasPermissionRuntime -> "REVIEW • runtime indicator"; runtimeLogReport.isNotBlank() -> "NO MATCH • configured indicators absent in this snapshot"; else -> "NOT ASSESSED • no process log snapshot" })
+            appendLine("Triage classification is heuristic and does not prove exploitability, safety or a vulnerability.")
             appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
             if (runtimeEvidence.isNotBlank()) { appendLine(); appendLine("ATTACHED DEVICE DIAGNOSTIC EVIDENCE"); appendLine(runtimeEvidence) }
@@ -2441,6 +2449,13 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
     val noteKey = "notes_" + packageName
     val startedKey = "started_" + packageName
     val evidenceKey = "evidence_" + packageName
+    val timelineKey = "timeline_" + packageName
+    var timeline by remember(packageName) { mutableStateOf(prefs.getString(timelineKey, "") ?: "") }
+    fun recordTimeline(event: String) {
+        val stamp = java.text.DateFormat.getDateTimeInstance().format(java.util.Date())
+        timeline = (timeline + if (timeline.isBlank()) "" else "\n" + stamp + " • " + event).takeLast(12000)
+        prefs.edit().putString(timelineKey, timeline).apply()
+    }
     var evidence by remember(packageName) { mutableStateOf(prefs.getString(evidenceKey, "") ?: "") }
     val completed = remember(packageName) { mutableStateListOf<Boolean>().apply { val saved = prefs.getString(stateKey, "") ?: ""; checks.indices.forEach { add(saved.getOrNull(it) == '1') } } }
     var notes by remember(packageName) { mutableStateOf(prefs.getString(noteKey, "") ?: "") }
@@ -2453,12 +2468,12 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
         Text("Test only your own app or an app you are authorized to assess. Checked items are manual observations, not automated passes or proof of security.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text("$doneCount / ${checks.size} steps recorded", fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(if (startedAt == 0L) "Session not started" else "Started: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(startedAt)), color = Grey, fontSize = 9.sp) }
-            Button(onClick = { startedAt = System.currentTimeMillis(); prefs.edit().putLong(startedKey, startedAt).apply() }) { Text(if (startedAt == 0L) "Start session" else "Restart") }
+            Button(onClick = { startedAt = System.currentTimeMillis(); prefs.edit().putLong(startedKey, startedAt).apply(); recordTimeline(if (doneCount == 0) "Session started" else "Session restarted") }) { Text(if (startedAt == 0L) "Start session" else "Restart") }
         }
         LinearProgressIndicator(progress = { doneCount.toFloat() / checks.size.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), color = Green)
         checks.forEachIndexed { index, label ->
-            Row(Modifier.fillMaxWidth().clickable { completed[index] = !completed[index]; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply() }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = completed[index], onCheckedChange = { checked -> completed[index] = checked; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply() })
+            Row(Modifier.fillMaxWidth().clickable { completed[index] = !completed[index]; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply(); recordTimeline((if (completed[index]) "Marked" else "Unmarked") + " • " + label) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = completed[index], onCheckedChange = { checked -> completed[index] = checked; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply(); recordTimeline((if (checked) "Marked" else "Unmarked") + " • " + label) })
                 Text(label, color = if (completed[index]) Green else Grey, fontSize = 10.sp)
             }
         }
@@ -2476,7 +2491,21 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
             }
             evidence = (if (evidence.isBlank()) block else evidence + "\n\n" + block).takeLast(24000)
             prefs.edit().putString(evidenceKey, evidence).apply()
+            recordTimeline("Diagnostic evidence attached • " + (if (scenario.isBlank()) "scenario unspecified" else scenario))
         }, enabled = hasDiagnostics, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Attach latest diagnostics to session") }
+        val hasFatal = runtimeLogReport.contains("FATAL EXCEPTION", true) || runtimeLogReport.contains("ANR in", true)
+        val hasTls = listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor").any { runtimeLogReport.contains(it, true) }
+        val hasPlatform = runtimeLogReport.contains("SecurityException", true) || runtimeLogReport.contains("Permission Denial", true)
+        val hasStorage = listOf("SQLiteException", "ENOSPC", "No space left").any { runtimeLogReport.contains(it, true) }
+        val reviewLevel = when { hasFatal -> "HIGH • crash / ANR indicator"; hasTls || hasPlatform || hasStorage -> "REVIEW • runtime indicators found"; runtimeLogReport.isNotBlank() -> "NO MATCH • configured indicators not found"; else -> "NOT ASSESSED • no process log snapshot" }
+        Text("EVIDENCE-BASED TRIAGE", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
+        Text("Review level: $reviewLevel", color = if (hasFatal) Red else if (hasTls || hasPlatform || hasStorage) Orange else Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+        Text("Heuristic snapshot classification only; not a vulnerability score, unique incident count, or security verdict.", color = Grey, fontSize = 9.sp)
+        if (timeline.isNotBlank()) {
+            Text("SESSION TIMELINE", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
+            Text(timeline.takeLast(2200), color = Grey, fontSize = 9.sp)
+            TextButton(onClick = { timeline = ""; prefs.edit().remove(timelineKey).apply() }) { Text("Clear timeline") }
+        }
         if (evidence.isNotBlank()) {
             Text("ATTACHED LOCAL EVIDENCE", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
             Text(evidence.takeLast(1800), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
