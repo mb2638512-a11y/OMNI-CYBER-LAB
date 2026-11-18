@@ -21,6 +21,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Structured static security checks with severity, evidence and remediation notes for debug flags, cleartext policy, backup configuration, sensitive permissions, exported components, signer availability and sampled code indicators.
 - One-tap, non-invasive Security Test Orchestrator that runs a consolidated local package/manifest/permission/exported-component/signer/DEX-indicator review, saves timestamped per-package reports and exports a shareable result. Runtime, backend authorization and billing flows are explicitly marked NOT RUN rather than being reported as passing.
 - Per-package regression history for the latest 10 local orchestrator snapshots. Consecutive runs compare newly observed rule matches, no-longer-matched signals and severity-label changes; history can be viewed in-app and exported as JSON. A no-longer-matched signal is explicitly not treated as proof of remediation.
+- Per-finding remediation workflow labels (`OPEN`, `IN PROGRESS`, `READY TO RETEST`) are stored locally, shown in the findings dashboard, and included in JSON/PDF audit exports. These are owner-managed workflow states; none is an automatic fixed/verified status.
 - Smali disassembly export and bounded Smali-to-DEX rebuild workflow.
 - APK signing with a user-provided JKS/PKCS12 keystore using Android apksig.
 - Static comparison of two APKs: package/version, signer, permissions, exported components and file hash.
