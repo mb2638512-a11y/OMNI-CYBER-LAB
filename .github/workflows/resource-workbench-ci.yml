@@ -1,0 +1,41 @@
+name: APK Resource Workbench CI
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/apktool-workbench/**'
+      - '.github/workflows/resource-workbench-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/apktool-workbench/**'
+      - '.github/workflows/resource-workbench-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  powershell-validation:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse PowerShell script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = "tools/apktool-workbench/Invoke-OmniApkResourceWorkbench.ps1"
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+          Write-Host "PowerShell syntax validation passed."
+      - name: Check pinned Apktool integrity and honest report states
+        shell: pwsh
+        run: |
+          $script = Get-Content "tools/apktool-workbench/Invoke-OmniApkResourceWorkbench.ps1" -Raw
+          if ($script -notmatch 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423') { throw "Pinned Apktool SHA-256 is missing." }
+          foreach ($marker in @("omni-resource-build-report.json", "omni-resource-build-report.txt", "NOT TESTED", "resources.arsc", "AndroidManifest.xml")) {
+            if ($script -notmatch [regex]::Escape($marker)) { throw "Required workbench/report marker missing: $marker" }
+          }
+          Write-Host "Integrity pin and report markers validated."
