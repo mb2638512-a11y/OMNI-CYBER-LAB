@@ -736,6 +736,33 @@ private fun runStructuredStaticChecks(app: AppRow): List<String> {
     return checks
 }
 
+
+private fun buildSecurityTestSuite(app: AppRow): List<String> {
+    val results = mutableListOf<String>()
+    fun result(status: String, title: String, evidence: String, next: String) {
+        results += "[$status] $title"
+        results += "Evidence: $evidence"
+        results += "Next: $next"
+    }
+    result("PASS", "Package identity inventory", "Package ${app.pkg}, version ${app.version}, target SDK ${app.targetSdk}.", "Compare package identity with the trusted publisher and expected release.")
+    result(if (app.debug) "REVIEW" else "PASS", "Debuggable build flag", if (app.debug) "FLAG_DEBUGGABLE is enabled." else "No debuggable flag was reported by available package metadata.", "Confirm this is a production release; debug flag absence is not a security verdict.")
+    val cleartext = app.findings.any { it.contains("Cleartext", true) }
+    result(if (cleartext) "REVIEW" else "PASS", "Cleartext traffic policy", if (cleartext) "Metadata indicates cleartext traffic may be permitted." else "No cleartext-allowed metadata flag was reported.", "Inspect decoded network security configuration and verify actual traffic in an authorized test environment.")
+    val sensitive = app.permissions.filter { p -> listOf("SMS", "CONTACTS", "LOCATION", "CAMERA", "RECORD_AUDIO", "PHONE", "BODY_SENSORS").any { p.contains(it, true) } }
+    result(if (sensitive.isEmpty()) "PASS" else "REVIEW", "Sensitive permission requests", if (sensitive.isEmpty()) "No configured sensitive permission names matched." else sensitive.take(12).joinToString(), "Validate purpose, runtime grant state, timing and data minimization for each permission.")
+    val exported = app.exportedComponents
+    val unguarded = exported.filter { it.contains("permission=none", true) }
+    result(if (unguarded.isNotEmpty()) "REVIEW" else if (exported.isNotEmpty()) "REVIEW" else "PASS", "Exported component exposure", "Exported components: ${exported.size}; entries explicitly marked permission=none: ${unguarded.size}.", "Review intent filters, caller validation, authentication and sensitive operations. Exported alone does not prove a vulnerability.")
+    result(if (app.signer == "Unavailable") "REVIEW" else "INFO", "Signing certificate availability", "SHA-256 fingerprint: ${app.signer}.", "Compare against a trusted publisher/release fingerprint; a fingerprint alone does not prove trust.")
+    val hasArchive = app.archiveInventory.isNotEmpty()
+    result(if (hasArchive) "PASS" else "NOT AVAILABLE", "APK archive inventory", if (hasArchive) "${app.archiveInventory.size} bounded inventory entries are available." else "No APK archive inventory is available for this app.", "Inspect DEX/native library and resource inventory; archive presence is not a malware verdict.")
+    val behavior = app.archiveInventory.filter { it.contains("Behavior/API marker", true) || it.contains("credential", true) || it.contains("secret", true) }
+    result(if (behavior.isEmpty()) if (hasArchive) "PASS" else "NOT AVAILABLE" else "REVIEW", "Static behavior/string indicators", if (behavior.isEmpty()) "No configured marker matched the bounded sample." else behavior.take(6).joinToString(" | ").take(700), "Manually inspect code paths. Strings do not prove execution or malicious intent.")
+    result("NOT RUN", "Runtime behavior and network validation", "This one-tap suite does not launch the target app, intercept traffic or exercise account flows.", "Use the guided runtime test session, controlled test accounts and authorized proxy/device setup.")
+    result("NOT RUN", "Backend authorization and billing integrity", "Server-side authorization and official store billing flows are outside this local package scan.", "Test APIs and purchases in your own staging environment and official billing sandbox.")
+    return results
+}
+
 private fun classifyFinding(finding: String): Pair<String, String> {
     val value = finding.lowercase()
     return when {
@@ -1711,6 +1738,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         listOf(
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Automated static security checks", "Run structured metadata and bounded archive rules with severity, evidence and remediation notes.", "READY • STATIC RULES", true),
+                WorkspaceFeature("Security test orchestrator", "Run a consolidated, non-invasive package security suite and save a timestamped result snapshot.", "READY • ONE-TAP SUITE", true),
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
@@ -2104,6 +2132,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             if (current.title == "Security overview") {
                                 SecurityFindingsDashboard(context, app)
                             }
+                            if (current.title == "Security test orchestrator") {
+                                SecurityTestOrchestrator(context, app)
+                            }
                             if (current.title == "Automated static security checks") {
                                 val reportLines = featureResults.ifEmpty { runStructuredStaticChecks(app) }
                                 Text("RULE RESULTS • ${reportLines.count { it.startsWith("[") }}", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
@@ -2454,6 +2485,73 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
     }
 }
 
+
+
+@Composable
+private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
+    val prefs = remember(app.pkg) { context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE) }
+    var report by remember(app.pkg) { mutableStateOf(prefs.getString("report_" + app.pkg, "") ?: "") }
+    var ranAt by remember(app.pkg) { mutableStateOf(prefs.getLong("ran_at_" + app.pkg, 0L)) }
+    val results = remember(report) { report.lines().filter { it.startsWith("[") } }
+    val pass = results.count { it.startsWith("[PASS]") }
+    val review = results.count { it.startsWith("[REVIEW]") }
+    val info = results.count { it.startsWith("[INFO]") }
+    val unavailable = results.count { it.startsWith("[NOT AVAILABLE]") }
+    val notRun = results.count { it.startsWith("[NOT RUN]") }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text("ONE-TAP SECURITY TEST ORCHESTRATOR", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text("Non-invasive checks against currently available package metadata and bounded APK inventory. No target code is executed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+        Button(onClick = {
+            val stamp = System.currentTimeMillis()
+            val body = buildSecurityTestSuite(app).joinToString("\\n")
+            report = "OMNI CYBER LAB • SECURITY TEST RUN\\nApp: ${app.name} (${app.pkg})\\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\\n\\n" + body
+            ranAt = stamp
+            prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp).apply()
+        }, modifier = Modifier.fillMaxWidth()) { Text("Run security test suite") }
+        if (ranAt > 0L) {
+            Text("Last run: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(ranAt)), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("PASS" to pass, "REVIEW" to review, "INFO" to info).forEach { (label, count) ->
+                    Column(Modifier.weight(1f).background(CardBg, RoundedCornerShape(10.dp)).padding(8.dp)) {
+                        Text(label, color = when (label) { "PASS" -> Green; "REVIEW" -> Orange; else -> Blue }, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(count.toString(), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Text("Not available: $unavailable • Not run: $notRun", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 6.dp))
+            results.forEach { line ->
+                Text(line, color = when {
+                    line.startsWith("[REVIEW]") -> Orange
+                    line.startsWith("[PASS]") -> Green
+                    line.startsWith("[NOT RUN]") || line.startsWith("[NOT AVAILABLE]") -> Grey
+                    else -> Blue
+                }, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                val detailIndex = report.lines().indexOf(line)
+                val lines = report.lines()
+                if (detailIndex >= 0 && detailIndex + 2 < lines.size) {
+                    Text(lines[detailIndex + 1], color = Grey, fontSize = 9.sp)
+                    Text(lines[detailIndex + 2], color = Grey, fontSize = 9.sp)
+                }
+            }
+            Button(onClick = {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "OMNI CYBER LAB security test • " + app.name)
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                context.startActivity(Intent.createChooser(send, "Export security test report"))
+            }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Export test run report") }
+            TextButton(onClick = {
+                report = ""
+                ranAt = 0L
+                prefs.edit().remove("report_" + app.pkg).remove("ran_at_" + app.pkg).apply()
+            }) { Text("Clear saved test run") }
+        } else {
+            Text("No test run saved yet. Run the suite to create a timestamped report.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+        Text("PASS means only that the configured local rule did not detect its specific signal. REVIEW is not a confirmed vulnerability. Runtime, billing and backend checks are explicitly not run by this suite.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+}
 
 @Composable
 private fun EndpointAuditPanel() {
