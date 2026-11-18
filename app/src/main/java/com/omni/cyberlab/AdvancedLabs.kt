@@ -54,7 +54,7 @@ private fun readEditableEntry(apk: File, entryName: String): String {
     require(entryName.startsWith("assets/") || entryName.startsWith("res/raw/")) { "Only assets/ and res/raw/ entries are editable in this lab." }
     return ZipFile(apk).use { zip ->
         val e = zip.getEntry(entryName) ?: error("Entry not found in APK.")
-        require(!e.isDirectory && e.size in 0..262144) { "Entry exceeds the 256 KB text-edit limit." }
+        require(!e.isDirectory && e.size >= 0L && e.size <= 262144L) { "Entry exceeds the 256 KB text-edit limit." }
         val bytes = zip.getInputStream(e).use { it.readBytes() }
         require(bytes.none { it == 0.toByte() }) { "Binary content is not editable as text." }
         bytes.toString(Charsets.UTF_8)
