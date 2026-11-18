@@ -57,6 +57,12 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var findingImpact by remember(packageName) { mutableStateOf("") }
     var findingFix by remember(packageName) { mutableStateOf("") }
     var findingsJson by remember(packageName) { mutableStateOf(prefs.getString("findings_json", "[]") ?: "[]") }
+    var matrixResource by remember(packageName) { mutableStateOf("") }
+    var matrixActor by remember(packageName) { mutableStateOf("") }
+    var matrixExpected by remember(packageName) { mutableStateOf("DENY") }
+    var matrixObserved by remember(packageName) { mutableStateOf("NOT TESTED") }
+    var matrixEvidence by remember(packageName) { mutableStateOf("") }
+    var matrixJson by remember(packageName) { mutableStateOf(prefs.getString("authorization_matrix", "[]") ?: "[]") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
@@ -74,6 +80,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("lastEndpointProbe", if (probeResult.isBlank()) JSONObject.NULL else JSONObject(probeResult))
                 .put("endpointProbeHistory", JSONArray(probeHistoryJson))
                 .put("findings", JSONArray(findingsJson))
+                .put("authorizationMatrix", JSONArray(matrixJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -180,6 +187,40 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             Text("Saved history includes status, latency, certificate fingerprint and header observations. Changes are review signals, not automatic attack or compromise findings.", style = MaterialTheme.typography.labelSmall)
         } else Text("No endpoint probe history yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
+        Divider()
+        Text("API AUTHORIZATION MATRIX", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Use only client-owned test accounts and records. Compare expected access with observed responses; do not enumerate or modify other users’ data.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(matrixResource, { matrixResource = it }, label = { Text("API route / resource / record ID (test data only)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(matrixActor, { matrixActor = it }, label = { Text("Actor role / test account label") }, modifier = Modifier.fillMaxWidth())
+        Text("Expected access", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("ALLOW", "DENY").forEach { value -> FilterChip(selected = matrixExpected == value, onClick = { matrixExpected = value }, label = { Text(value) }) }
+        }
+        Text("Observed result", style = MaterialTheme.typography.labelMedium)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("NOT TESTED", "ALLOWED", "DENIED", "UNEXPECTED ALLOW", "UNEXPECTED DENY", "ERROR").chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { pair.forEach { value -> FilterChip(selected = matrixObserved == value, onClick = { matrixObserved = value }, label = { Text(value) }) } }
+            }
+        }
+        OutlinedTextField(matrixEvidence, { matrixEvidence = it }, label = { Text("Evidence reference / response code / notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val arr = runCatching { JSONArray(matrixJson) }.getOrElse { JSONArray() }
+            val mismatch = (matrixExpected == "DENY" && matrixObserved == "ALLOWED") || (matrixExpected == "ALLOW" && matrixObserved == "DENIED")
+            arr.put(JSONObject().put("id", "AC-${System.currentTimeMillis()}").put("resource", matrixResource.trim()).put("actorRole", matrixActor.trim()).put("expectedAccess", matrixExpected).put("observedResult", matrixObserved).put("accessExpectationMismatch", mismatch).put("evidence", matrixEvidence.trim()).put("recordedAt", DateFormat.getDateTimeInstance().format(Date())).put("status", if (matrixObserved == "NOT TESTED") "NOT TESTED" else "OPERATOR RECORDED • NEEDS REVIEW"))
+            val bounded = JSONArray()
+            for (index in (arr.length() - 100).coerceAtLeast(0) until arr.length()) bounded.put(arr.getJSONObject(index))
+            matrixJson = bounded.toString()
+            prefs.edit().putString("authorization_matrix", matrixJson).apply()
+            matrixResource = ""; matrixEvidence = ""; matrixObserved = "NOT TESTED"
+            status = if (mismatch) "Access expectation mismatch recorded. Reproduce and review before reporting a vulnerability." else "Authorization test case saved locally."
+        }, enabled = authorized && matrixResource.isNotBlank() && matrixActor.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save authorization test case") }
+        val matrixRecords = runCatching { JSONArray(matrixJson) }.getOrElse { JSONArray() }
+        Text("Saved access-control cases: ${matrixRecords.length()}", style = MaterialTheme.typography.bodyMedium)
+        if (matrixRecords.length() > 0) {
+            val last = matrixRecords.optJSONObject(matrixRecords.length() - 1)
+            if (last != null) Text("Latest: ${last.optString("actorRole")} • ${last.optString("expectedAccess")} → ${last.optString("observedResult")} • ${last.optString("status")}", style = MaterialTheme.typography.bodySmall)
+            Text("Expectation mismatch is a triage signal only; confirm with repeatable evidence and server-side context.", style = MaterialTheme.typography.labelSmall)
+        }
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
