@@ -2428,6 +2428,11 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
     val reviewed = remember(app.pkg) { mutableStateListOf<String>().apply {
         addAll((prefs.getStringSet(reviewedKey, emptySet()) ?: emptySet()).toList())
     } }
+    val remediationKey = "remediation_" + app.pkg
+    var remediation by remember(app.pkg) { mutableStateOf(try {
+        val stored = org.json.JSONObject(prefs.getString(remediationKey, "{}") ?: "{}")
+        buildMap { stored.keys().forEach { key -> put(key, stored.optString(key, "OPEN")) } }
+    } catch (_: Exception) { emptyMap() }) }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text("SECURITY FINDINGS DASHBOARD", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text(app.name + " • " + app.pkg, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
@@ -2464,6 +2469,18 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
                         prefs.edit().putStringSet(reviewedKey, reviewed.toSet()).apply()
                     }) { Text(if (isReviewed) "Undo review" else "Mark reviewed") }
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val status = remediation[title] ?: "OPEN"
+                    Text("Remediation: $status", color = when (status) { "IN PROGRESS" -> Blue; "READY TO RETEST" -> Orange; else -> Grey }, fontSize = 9.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        val next = when (status) { "OPEN" -> "IN PROGRESS"; "IN PROGRESS" -> "READY TO RETEST"; else -> "OPEN" }
+                        val updated = remediation.toMutableMap().apply { put(title, next) }
+                        remediation = updated
+                        val json = org.json.JSONObject()
+                        updated.forEach { (key, value) -> json.put(key, value) }
+                        prefs.edit().putString(remediationKey, json.toString()).apply()
+                    }) { Text("Update") }
+                }
             }
         }
         Button(onClick = {
@@ -2478,6 +2495,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
                 put("evidenceAttached", evidence.isNotBlank())
                 put("timelineEvents", if (timeline.isBlank()) org.json.JSONArray() else org.json.JSONArray(timeline.lines()))
                 put("reviewedFindings", org.json.JSONArray(reviewed.toList()))
+                put("remediationTracking", org.json.JSONObject().apply { remediation.forEach { (key, value) -> put(key, value) } })
                 put("findings", org.json.JSONArray(findings))
                 put("limitations", "Static rules and manually recorded runtime checks only; not a vulnerability score, malware verdict or formal penetration test.")
             }.toString(2)
