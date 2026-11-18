@@ -103,14 +103,20 @@ object SecureWorkspaceBackup {
                 is org.json.JSONArray -> editor.putStringSet(key, (0 until value.length()).map { value.optString(it) }.toSet())
             }
         }
+        val evidenceFiles = json.optJSONArray("evidenceFiles") ?: JSONArray()
+        require(evidenceFiles.length() <= 50) { "Backup contains more than 50 evidence files." }
+        val decodedEvidence = (0 until evidenceFiles.length()).map { index ->
+            val item = evidenceFiles.getJSONObject(index)
+            val bytes = Base64.decode(item.optString("data"), Base64.NO_WRAP)
+            require(bytes.isNotEmpty() && bytes.size <= 10 * 1024 * 1024) { "Backup contains an invalid or oversized evidence attachment." }
+            item.optString("label") to bytes
+        }
+        require(decodedEvidence.sumOf { it.second.size.toLong() } <= 20L * 1024L * 1024L) { "Backup evidence exceeds the 20 MB workspace limit." }
         editor.putBoolean("authorized", false).putString("secure_evidence_index", "[]").apply()
         SecureEvidenceVault.clear(context, engagementId)
         val restoredEvidence = JSONArray()
-        val evidenceFiles = json.optJSONArray("evidenceFiles") ?: JSONArray()
-        for (index in 0 until evidenceFiles.length()) {
-            val item = evidenceFiles.optJSONObject(index) ?: continue
-            val bytes = Base64.decode(item.optString("data"), Base64.NO_WRAP)
-            val record = SecureEvidenceVault.importBytes(context, engagementId, item.optString("label"), bytes)
+        decodedEvidence.forEach { (label, bytes) ->
+            val record = SecureEvidenceVault.importBytes(context, engagementId, label, bytes)
             restoredEvidence.put(record)
         }
         context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString("secure_evidence_index", restoredEvidence.toString()).apply()
