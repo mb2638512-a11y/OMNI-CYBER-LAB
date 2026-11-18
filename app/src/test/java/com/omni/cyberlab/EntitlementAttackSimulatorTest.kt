@@ -61,4 +61,14 @@ class EntitlementAttackSimulatorTest {
         assertTrue(result.vulnerableOutcome.contains("UNLOCKED"))
         assertTrue(result.hardenedOutcome.contains("DENIED"))
     }
+
+    @Test
+    fun replayDemonstratesDoubleCreditOnlyInVulnerableModel() {
+        val result = EntitlementAttackSimulator.runSuite().first { it.id == "replay" }
+        assertTrue(result.vulnerableOutcome.contains("200 coins"))
+        assertTrue(result.hardenedOutcome.startsWith("DENY"))
+        assertTrue(result.evidence.contains("200"))
+        assertTrue(result.evidence.contains("100"))
+    }
+
 }
