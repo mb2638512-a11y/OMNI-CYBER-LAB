@@ -118,11 +118,16 @@ func (s *server) verify(w http.ResponseWriter, r *http.Request) {
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"ledger lookup failed"}); return
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO play_purchase_ledger(token_sha256, package_name, product_id, purchase_type, user_id, purchase_state, entitled, verified_at)
+	var storedHash string
+	err = s.db.QueryRow(ctx, `INSERT INTO play_purchase_ledger(token_sha256, package_name, product_id, purchase_type, user_id, purchase_state, entitled, verified_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,NOW())
 		ON CONFLICT(token_sha256) DO UPDATE SET purchase_state=EXCLUDED.purchase_state, entitled=EXCLUDED.entitled, verified_at=NOW()
-		WHERE play_purchase_ledger.user_id=EXCLUDED.user_id`,
-		hashHex, req.PackageName, req.ProductID, req.PurchaseType, req.UserID, result.State, result.Entitled)
+		WHERE play_purchase_ledger.user_id=EXCLUDED.user_id
+		RETURNING token_sha256`,
+		hashHex, req.PackageName, req.ProductID, req.PurchaseType, req.UserID, result.State, result.Entitled).Scan(&storedHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error":"purchase token is already bound to a different account"}); return
+	}
 	if err != nil { writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"could not persist verified purchase"}); return }
 	result.Duplicate = existingUser == req.UserID
 	result.Message = "Google Play token verified. Apply entitlement idempotently from this server-side record."
@@ -177,6 +182,9 @@ func main() {
 	db, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil { log.Fatalf("database connection: %v", err) }
 	defer db.Close()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer pingCancel()
+	if err := db.Ping(pingCtx); err != nil { log.Fatalf("database is not reachable: %v", err) }
 	s := &server{db:db, googleClient:oauth2.NewClient(context.Background(), jwtConfig.TokenSource(context.Background())), apiKey:[]byte(apiKey), allowedPackages:envSet("ALLOWED_PACKAGE_NAMES"), allowedProducts:envSet("ALLOWED_PRODUCT_IDS")}
 	if len(s.allowedPackages)==0 || len(s.allowedProducts)==0 { log.Fatal("ALLOWED_PACKAGE_NAMES and ALLOWED_PRODUCT_IDS must be configured") }
 	mux := http.NewServeMux()
