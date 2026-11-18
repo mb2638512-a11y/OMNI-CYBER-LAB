@@ -178,3 +178,7 @@ This repository contains source code. A build is considered successful only when
 
 - Adds a local workspace registry with separate per-engagement preference stores, create and switch controls. Existing package-level assessment data remains available as the Original workspace; newly created engagements keep their scope, findings, test records, evidence references and checkpoint history isolated from one another.
 - Workspace registry and records remain on this Android device. This is not cloud sync, multi-user access control, encrypted client vault storage or a remote client portal. Use device security and avoid storing secrets or personal data.
+### Workspace management
+
+- Adds rename and confirmed-delete controls for non-original engagement workspaces. Deletion clears that engagement's local preference store and removes it from the workspace registry; the Original workspace is protected. Export reports before deleting a workspace.
+- Workspace names are local labels. The feature does not provide encrypted evidence vaults, cloud backups, multi-user permissions or client portal access.
