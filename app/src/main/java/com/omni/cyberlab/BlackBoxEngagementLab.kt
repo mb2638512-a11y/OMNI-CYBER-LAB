@@ -1,6 +1,8 @@
 package com.omni.cyberlab
 
 import android.content.Context
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -122,6 +124,92 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
                 catch (e: Exception) { status = "Export failed: ${e.message}" }
             }
+        }
+    }
+    val pdfExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val reportText = buildString {
+                    appendLine("OMNI CYBER LAB — CLIENT SECURITY ASSESSMENT")
+                    appendLine("Client: $clientName")
+                    appendLine("Engagement: $engagementName")
+                    appendLine("Reference: $engagementReference")
+                    appendLine("Status: $engagementStatus")
+                    appendLine("Target: $target")
+                    appendLine("Package: $packageName")
+                    appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
+                    appendLine("Authorization confirmed by operator: $authorized")
+                    appendLine()
+                    appendLine("SCOPE")
+                    appendLine("Allowed API hosts: $apiHosts")
+                    appendLine("Excluded assets: $exclusions")
+                    appendLine("Test window / rate limits: $testWindow")
+                    appendLine()
+                    appendLine("ATTACK SURFACE COVERAGE: ${checked.size}/${blackBoxChecks.size}")
+                    checked.sorted().forEach { appendLine("COMPLETED CHECK: ${blackBoxChecks[it]}") }
+                    blackBoxChecks.indices.filter { it !in checked }.forEach { appendLine("NOT RECORDED: ${blackBoxChecks[it]}") }
+                    appendLine()
+                    appendLine("FINDINGS")
+                    val findings = JSONArray(findingsJson)
+                    if (findings.length() == 0) appendLine("No finding records saved.")
+                    for (i in 0 until findings.length()) {
+                        val f = findings.optJSONObject(i) ?: continue
+                        appendLine("${i + 1}. [${f.optString("severity")}] ${f.optString("title")}")
+                        appendLine("Workflow: ${f.optString("workflowStatus", "OPEN")} | CVSS: ${f.opt("cvssBaseScore") ?: "Not supplied"} | CWE: ${f.optString("cweReference", "Not supplied")}")
+                        appendLine("Reproduction: ${f.optString("reproduction")}")
+                        appendLine("Impact / evidence: ${f.optString("impactEvidence")}")
+                        appendLine("Remediation: ${f.optString("remediation")}")
+                        appendLine("Verification: ${f.optString("status", "UNVERIFIED")}")
+                    }
+                    appendLine()
+                    appendLine("TEST RECORD COUNTS")
+                    appendLine("API authorization matrix: ${JSONArray(matrixJson).length()}")
+                    appendLine("Authentication/session: ${JSONArray(sessionRecordsJson).length()}")
+                    appendLine("Local data: ${JSONArray(localDataJson).length()}")
+                    appendLine("Network security: ${JSONArray(networkJson).length()}")
+                    appendLine("Billing lifecycle: ${JSONArray(billingJson).length()}")
+                    appendLine("Endpoint probe history: ${JSONArray(probeHistoryJson).length()}")
+                    appendLine()
+                    appendLine("OPERATOR NOTES")
+                    appendLine(notes)
+                    appendLine()
+                    appendLine("LIMITATIONS")
+                    appendLine("This report reflects operator-entered records and configured checks. It is not an independent certification, automated penetration-test result, or proof that untested areas are secure.")
+                    appendLine("Findings and workflow statuses require evidence-backed review. A status of RETEST RECORDED or CLOSED is not independently verified by this app.")
+                }
+                val paint = Paint().apply { textSize = 9f; isAntiAlias = true }
+                val lines = reportText.lines().flatMap { line ->
+                    if (line.isBlank()) listOf("") else {
+                        val words = line.split(Regex("\\s+"))
+                        val wrapped = mutableListOf<String>()
+                        var current = ""
+                        words.forEach { word ->
+                            if (current.isNotEmpty() && current.length + word.length + 1 > 96) { wrapped.add(current); current = word }
+                            else current = if (current.isEmpty()) word else current + " " + word
+                        }
+                        if (current.isNotEmpty()) wrapped.add(current)
+                        wrapped
+                    }
+                }
+                val pdf = PdfDocument()
+                var pageNo = 1
+                var lineIndex = 0
+                while (lineIndex < lines.size) {
+                    val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
+                    var y = 40f
+                    while (lineIndex < lines.size && y < 805f) {
+                        page.canvas.drawText(lines[lineIndex], 36f, y, paint)
+                        y += 14f
+                        lineIndex++
+                    }
+                    pdf.finishPage(page)
+                    pageNo++
+                }
+                val output = context.contentResolver.openOutputStream(uri) ?: error("Cannot open PDF destination")
+                output.use { pdf.writeTo(it) }
+                pdf.close()
+                status = "Client assessment PDF exported."
+            } catch (e: Exception) { status = "PDF export failed: ${e.message}" }
         }
     }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -439,6 +527,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }
         OutlinedTextField(notes, { notes = it; prefs.edit().putString("notes", it).apply() }, label = { Text("Evidence notes / findings references") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
         Button(onClick = { export.launch("omni-blackbox-${packageName}.json") }, enabled = authorized && target.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Export scoped test plan & evidence index") }
+        OutlinedButton(onClick = { pdfExport.launch("omni-client-security-report-${packageName}.pdf") }, enabled = authorized && target.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Export professional client PDF report") }
         Text(if (authorized) status else "Export is disabled until the operator confirms client authorization.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         Text("No exploit is launched automatically. The checklist records manual assessment coverage; checked items are not vulnerability proof or remediation confirmation.", style = MaterialTheme.typography.labelSmall)
     }
