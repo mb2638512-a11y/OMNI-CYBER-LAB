@@ -2354,6 +2354,21 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 Text("${app.exportedComponents.size} exported components found", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 if (app.exportedComponents.isEmpty()) Text("No exported components were reported by package metadata.", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                                 else app.exportedComponents.forEach { component -> Text("• $component", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp)) }
+                                val componentSignals = app.exportedComponents.map { component ->
+                                    val kind = when { component.contains("activity", true) -> "Activity"; component.contains("service", true) -> "Service"; component.contains("receiver", true) -> "Receiver"; component.contains("provider", true) -> "Provider"; else -> "Component" }
+                                    val unguarded = component.contains("permission=none", true) || component.contains("permission: none", true)
+                                    val signal = when { unguarded && kind == "Provider" -> "HIGH REVIEW"; unguarded && (kind == "Service" || kind == "Receiver") -> "MEDIUM REVIEW"; unguarded -> "REVIEW"; else -> "INFO" }
+                                    Triple(signal, kind, component)
+                                }
+                                Text("COMPONENT RISK TRIAGE • HEURISTIC", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                                Text("High: ${componentSignals.count { it.first == "HIGH REVIEW" }} • Medium: ${componentSignals.count { it.first == "MEDIUM REVIEW" }} • Review/info: ${componentSignals.count { it.first == "REVIEW" || it.first == "INFO" }}", color = Grey, fontSize = 10.sp)
+                                componentSignals.forEach { (signal, kind, component) ->
+                                    Text("$signal • $kind", color = if (signal.contains("HIGH")) Red else if (signal.contains("MEDIUM") || signal == "REVIEW") Orange else Blue, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+                                    Text(component.take(700), color = Grey, fontSize = 9.sp)
+                                    if (component.contains("permission=none", true) || component.contains("permission: none", true)) Text("Next: verify caller authentication and sensitive-operation checks inside this component.", color = Orange, fontSize = 9.sp)
+                                    else if (component.contains("intent", true) || component.contains("filter", true)) Text("Next: validate deep-link parameters, URI schemes, host allowlists and authorization using an approved test account.", color = Grey, fontSize = 9.sp)
+                                }
+                                Text("Heuristic prioritization only. Exported state and manifest metadata cannot establish exploitability; validate intent filters and component behavior in an approved runtime test.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                                 Text("Exported does not automatically mean vulnerable. Verify intent filters, caller permissions, input validation and sensitive actions during an authorized runtime test.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             } else if (current.title == "Permission inventory" || current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
                                 val visiblePermissions = if (current.title == "Sensitive permissions" || current.title == "Runtime permission grants") {
