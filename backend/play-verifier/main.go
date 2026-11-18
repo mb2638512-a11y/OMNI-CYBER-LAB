@@ -114,7 +114,7 @@ func (s *server) authorized(r *http.Request) bool {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(header, prefix) { return false }
 	token := strings.TrimPrefix(header, prefix)
-	if token == "" || strings.TrimSpace(token) != token || strings.ContainsAny(token, " \\t\\r\\n") { return false }
+	if token == "" || strings.TrimSpace(token) != token || strings.ContainsAny(token, " \t\r\n") { return false }
 	if len(s.apiKey) == 0 || len(token) != len(s.apiKey) { return false }
 	return subtle.ConstantTimeCompare([]byte(token), s.apiKey) == 1
 }
