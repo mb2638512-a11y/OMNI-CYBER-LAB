@@ -165,3 +165,9 @@ This repository contains source code. A build is considered successful only when
 
 - Adds a client-facing PDF export with client/engagement metadata, target and scope, authorization confirmation, attack-surface checklist coverage, finding details (severity, CVSS/CWE, reproduction, impact/evidence, remediation and workflow state), test-record counts and operator notes.
 - The report explicitly documents limitations: operator-entered records are not independent certification, untested areas are not proven secure, and workflow labels are not independent retest verification.
+
+### Engagement checkpoint history
+
+- Operators can save up to 20 immutable local checkpoints of the current engagement workspace. Each checkpoint captures client/reference/status, target and scope, manual coverage, finding records, API authorization observations, session/local-data/network/billing test records, endpoint probe history and notes.
+- The workspace displays the latest three checkpoints and includes the full checkpoint archive in JSON export; the PDF report indicates how many checkpoints have been saved.
+- Checkpoints are snapshots, not isolated multi-engagement databases. They do not switch or restore a prior workspace, and all records remain on the device under the package-specific local preferences.
