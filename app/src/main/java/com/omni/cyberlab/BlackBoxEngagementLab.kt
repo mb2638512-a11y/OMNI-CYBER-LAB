@@ -50,6 +50,12 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var probeMethod by remember(packageName) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
     var probeBusy by remember { mutableStateOf(false) }
     var probeResult by remember(packageName) { mutableStateOf(prefs.getString("probe_result", "") ?: "") }
+    var findingTitle by remember(packageName) { mutableStateOf("") }
+    var findingSeverity by remember(packageName) { mutableStateOf("MEDIUM") }
+    var findingSteps by remember(packageName) { mutableStateOf("") }
+    var findingImpact by remember(packageName) { mutableStateOf("") }
+    var findingFix by remember(packageName) { mutableStateOf("") }
+    var findingsJson by remember(packageName) { mutableStateOf(prefs.getString("findings_json", "[]") ?: "[]") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
@@ -65,6 +71,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("remainingChecks", JSONArray(blackBoxChecks.indices.filter { it !in checked }.map { blackBoxChecks[it] }))
                 .put("operatorNotes", notes)
                 .put("lastEndpointProbe", if (probeResult.isBlank()) JSONObject.NULL else JSONObject(probeResult))
+                .put("findings", JSONArray(findingsJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -124,6 +131,32 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             }
         }
         Text("This probe validates reachability and records response metadata; it does not prove an endpoint is vulnerable or secure.", style = MaterialTheme.typography.labelSmall)
+        Divider()
+        Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            listOf("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL").forEach { level ->
+                FilterChip(selected = findingSeverity == level, onClick = { findingSeverity = level }, label = { Text(level) })
+            }
+        }
+        OutlinedTextField(findingSteps, { findingSteps = it }, label = { Text("Reproduction steps / preconditions") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        OutlinedTextField(findingImpact, { findingImpact = it }, label = { Text("Observed impact and evidence reference") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        OutlinedTextField(findingFix, { findingFix = it }, label = { Text("Recommended remediation") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val arr = runCatching { JSONArray(findingsJson) }.getOrElse { JSONArray() }
+            arr.put(JSONObject().put("id", "F-${System.currentTimeMillis()}").put("title", findingTitle.trim()).put("severity", findingSeverity).put("reproduction", findingSteps).put("impactEvidence", findingImpact).put("remediation", findingFix).put("status", "UNVERIFIED • NEEDS REVIEW").put("createdAt", DateFormat.getDateTimeInstance().format(Date())))
+            findingsJson = arr.toString()
+            prefs.edit().putString("findings_json", findingsJson).apply()
+            findingTitle = ""; findingSteps = ""; findingImpact = ""; findingFix = ""
+            status = "Finding record saved locally. Severity is operator-assigned, not automatically validated."
+        }, enabled = authorized && findingTitle.isNotBlank() && findingSteps.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save evidence-backed finding") }
+        val savedFindings = runCatching { JSONArray(findingsJson) }.getOrElse { JSONArray() }
+        Text("Saved findings: ${savedFindings.length()}", style = MaterialTheme.typography.bodyMedium)
+        if (savedFindings.length() > 0) {
+            val latest = savedFindings.optJSONObject(savedFindings.length() - 1)
+            if (latest != null) Text("Latest: ${latest.optString("severity")} • ${latest.optString("title")} • ${latest.optString("status")}", style = MaterialTheme.typography.bodySmall)
+        }
         OutlinedTextField(notes, { notes = it; prefs.edit().putString("notes", it).apply() }, label = { Text("Evidence notes / findings references") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
         Button(onClick = { export.launch("omni-blackbox-${packageName}.json") }, enabled = authorized && target.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Export scoped test plan & evidence index") }
         Text(if (authorized) status else "Export is disabled until the operator confirms client authorization.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
