@@ -40,7 +40,7 @@ private fun listEditableApkEntries(apk: File): List<String> {
         while (entries.hasMoreElements() && count++ < 6000) {
             val e = entries.nextElement()
             val n = e.name
-            val allowed = (n.startsWith("assets/") || n.startsWith("res/raw/")) && !e.isDirectory && e.size in 0..262144
+            val allowed = (n.startsWith("assets/") || n.startsWith("res/raw/")) && !e.isDirectory && e.size >= 0L && e.size <= 262144L
             val textLike = allowed && !n.endsWith(".png", true) && !n.endsWith(".jpg", true) && !n.endsWith(".webp", true) && !n.endsWith(".so", true) && !n.endsWith(".dex", true)
             if (textLike) out.add(n)
         }
@@ -72,7 +72,7 @@ private fun buildPatchedApk(source: File, entryName: String, replacement: String
                 if (e.isDirectory) continue
                 if (e.name.startsWith("META-INF/") && (e.name.endsWith(".RSA", true) || e.name.endsWith(".DSA", true) || e.name.endsWith(".EC", true) || e.name.endsWith(".SF", true) || e.name.endsWith("MANIFEST.MF", true))) continue
                 val bytes = if (e.name == entryName) { replaced = true; replacement.toByteArray(Charsets.UTF_8) } else {
-                    require(e.size in 0..(30L * 1024L * 1024L)) { "An APK entry exceeds the 30 MB safety limit." }
+                    require(e.size >= 0L && e.size <= 30L * 1024L * 1024L) { "An APK entry exceeds the 30 MB safety limit." }
                     zip.getInputStream(e).use { it.readBytes() }
                 }
                 total += bytes.size; require(total <= 150L * 1024L * 1024L) { "Expanded APK exceeds the 150 MB safety limit." }
@@ -86,10 +86,10 @@ private fun buildPatchedApk(source: File, entryName: String, replacement: String
 }
 
 @Composable
-fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPath: String?, modifier: Modifier = Modifier) {
+fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPath: String?, initialTab: Int = 0, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val prefs = remember(context, packageName) { context.getSharedPreferences("omni_advanced_labs", Context.MODE_PRIVATE) }
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember(packageName, initialTab) { mutableStateOf(initialTab.coerceIn(0, 1)) }
     var entries by remember { mutableStateOf(emptyList<String>()) }
     var selectedEntry by remember { mutableStateOf("") }
     var editedText by remember { mutableStateOf("") }
