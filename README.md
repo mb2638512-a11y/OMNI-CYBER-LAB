@@ -127,3 +127,15 @@ This repository contains source code. A build is considered successful only when
 - The black-box workspace includes manual test cases for secure token storage, logout invalidation, expiry, refresh rotation/replay, revocation, account switching, concurrent sessions, authentication error disclosure, app restart persistence, background-screen exposure and sensitive-action re-authentication.
 - Operators record PASS, FAIL or NEEDS REVIEW with redacted evidence references. The latest 100 observations are stored locally per package and included in engagement JSON export.
 - This module does not capture, replay, revoke or modify tokens and does not independently verify outcomes. Use client-owned test accounts, approved environments and redacted evidence; never store credentials or live tokens in notes.
+
+### Local data security lab
+
+- Adds manual review cases for plaintext preferences, app-private databases/backups, sensitive logs, clipboard, cache/temp files, shared storage, Android backup rules, screenshots/recent-app previews, Android Keystore use and account-switch/logout data isolation.
+- Operators record PASS, FAIL, NEEDS REVIEW with redacted evidence references. Latest 100 observations are stored locally per package and included in the engagement JSON export.
+- This is an evidence checklist, not a filesystem extraction or secret scanner. Do not place passwords, live tokens or personal data in notes.
+
+### Network security review
+
+- Adds manual checks for HTTPS-only API use, cleartext policy, TLS certificate validation, permissive trust managers, sensitive URL parameters, log/error leakage, redirect downgrade, server-side object authorization, response security/cache headers and fail-closed offline behavior.
+- Latest 100 observations are stored locally per package and included in the engagement JSON export.
+- This is a manual review workflow. It does not intercept arbitrary app traffic, bypass certificate validation, fuzz endpoints or perform automatic exploit attempts.
