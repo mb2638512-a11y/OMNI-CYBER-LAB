@@ -56,6 +56,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var evidenceJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("secure_evidence_index", "[]") ?: "[]") }
     var pendingEvidenceExportId by remember(packageName, activeEngagementId) { mutableStateOf("") }
     var backupPassphrase by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var backupPassphraseConfirm by remember(packageName, activeEngagementId) { mutableStateOf("") }
     var showBackupRestoreConfirm by remember(packageName, activeEngagementId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var target by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
@@ -81,7 +82,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 val secret = backupPassphrase.toCharArray()
                 val encrypted = withContext(Dispatchers.IO) { SecureWorkspaceBackup.encrypt(SecureWorkspaceBackup.snapshot(context, packageName, activeEngagementId), secret) }
                 context.contentResolver.openOutputStream(uri)?.use { it.write(encrypted) } ?: error("Cannot open backup destination.")
-                backupPassphrase = ""
+                backupPassphrase = ""; backupPassphraseConfirm = ""
                 status = "Encrypted workspace backup exported. Evidence attachments are stored separately in the evidence vault."
             } catch (e: Exception) { status = "Backup export failed: ${e.message}" }
         }
@@ -99,7 +100,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                     SecureWorkspaceBackup.decrypt(bytes, secret)
                 }
                 withContext(Dispatchers.IO) { SecureWorkspaceBackup.restore(context, packageName, activeEngagementId, payload) }
-                backupPassphrase = ""
+                backupPassphrase = ""; backupPassphraseConfirm = ""
                 status = "Workspace backup restored, including evidence attachments. Reopen this workspace to refresh its displayed records."
             } catch (e: Exception) { status = "Backup restore failed: ${e.message}" }
         }
@@ -411,10 +412,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         if (evidenceRecords.length() == 0) Text("No encrypted evidence attachments yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
         Text("ENCRYPTED WORKSPACE BACKUP", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
-        Text("Portable workspace backup encrypted with a passphrase using PBKDF2-HMAC-SHA256 and AES-256-GCM. Use at least 12 characters. Restore accepts backups from this app package into the currently selected workspace, including a newly created workspace on another device. Evidence attachments are included in the encrypted backup and re-encrypted into the restored workspace vault.", style = MaterialTheme.typography.bodySmall)
+        Text("Portable workspace backup encrypted with a passphrase using PBKDF2-HMAC-SHA256 and AES-256-GCM. Use at least 12 characters and confirm the passphrase before export. A lost passphrase cannot be recovered. Restore accepts backups from this app package into the currently selected workspace, including a newly created workspace on another device. Evidence attachments are included in the encrypted backup and re-encrypted into the restored workspace vault.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(backupPassphrase, { backupPassphrase = it }, label = { Text("Backup passphrase (12+ characters)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        OutlinedTextField(backupPassphraseConfirm, { backupPassphraseConfirm = it }, label = { Text("Confirm passphrase for export") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { workspaceBackupExport.launch("omni-workspace-backup.ocb") }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Export encrypted") }
+            OutlinedButton(onClick = { workspaceBackupExport.launch("omni-workspace-backup.ocb") }, enabled = authorized && backupPassphrase.length >= 12 && backupPassphrase == backupPassphraseConfirm, modifier = Modifier.weight(1f)) { Text("Export encrypted") }
             OutlinedButton(onClick = { showBackupRestoreConfirm = true }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Restore backup") }
         }
         if (showBackupRestoreConfirm) {
