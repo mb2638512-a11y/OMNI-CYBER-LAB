@@ -23,6 +23,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Per-package regression history for the latest 10 local orchestrator snapshots. Consecutive runs compare newly observed rule matches, no-longer-matched signals and severity-label changes; history can be viewed in-app and exported as JSON. A no-longer-matched signal is explicitly not treated as proof of remediation.
 - Per-finding remediation workflow labels (`OPEN`, `IN PROGRESS`, `READY TO RETEST`) are stored locally, shown in the findings dashboard, and included in JSON/PDF audit exports. These are owner-managed workflow states; none is an automatic fixed/verified status.
 - Test Intelligence groups suite results into Permissions & Components, Network Security, Build & Integrity, Code & Package, Runtime & Backend, and Configuration, then prioritizes REVIEW signals and explicitly unrun/unavailable checks with suggested next steps. This is triage guidance, not an exploitability or risk score.
+- Regression history checks the latest 10 snapshots for recurring rule-match titles: a signal present in an older snapshot, absent from the immediately previous run, and present again is labelled `REGRESSION`. This is a historical rule-match pattern, not proof that a vulnerability was fixed and reintroduced.
 - Smali disassembly export and bounded Smali-to-DEX rebuild workflow.
 - APK signing with a user-provided JKS/PKCS12 keystore using Android apksig.
 - Static comparison of two APKs: package/version, signer, permissions, exported components and file hash.
