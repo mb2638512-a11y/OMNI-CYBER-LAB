@@ -222,6 +222,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }, enabled = authorized && matrixResource.isNotBlank() && matrixActor.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save authorization test case") }
         val matrixRecords = runCatching { JSONArray(matrixJson) }.getOrElse { JSONArray() }
         Text("Saved access-control cases: ${matrixRecords.length()}", style = MaterialTheme.typography.bodyMedium)
+        val mismatchCount = (0 until matrixRecords.length()).count { matrixRecords.optJSONObject(it)?.optBoolean("accessExpectationMismatch", false) == true }
+        Text("Triage summary: $mismatchCount expected/observed mismatches • ${matrixRecords.length() - mismatchCount} other records", style = MaterialTheme.typography.labelSmall)
         if (matrixRecords.length() > 0) {
             val last = matrixRecords.optJSONObject(matrixRecords.length() - 1)
             if (last != null) Text("Latest: ${last.optString("actorRole")} • ${last.optString("expectedAccess")} → ${last.optString("observedResult")} • ${last.optString("status")}", style = MaterialTheme.typography.bodySmall)
@@ -252,6 +254,10 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }, enabled = authorized && sessionOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save session test result") }
         val sessionRecords = runCatching { JSONArray(sessionRecordsJson) }.getOrElse { JSONArray() }
         Text("Saved session observations: ${sessionRecords.length()}", style = MaterialTheme.typography.bodyMedium)
+        val sessionPass = (0 until sessionRecords.length()).count { sessionRecords.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val sessionFail = (0 until sessionRecords.length()).count { sessionRecords.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val sessionReview = (0 until sessionRecords.length()).count { sessionRecords.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Recorded outcomes: $sessionPass PASS • $sessionFail FAIL • $sessionReview NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
         if (sessionRecords.length() > 0) {
             val latestSession = sessionRecords.optJSONObject(sessionRecords.length() - 1)
             if (latestSession != null) Text("Latest: ${latestSession.optString("operatorOutcome")} • ${latestSession.optString("testCase")}", style = MaterialTheme.typography.bodySmall)
