@@ -31,6 +31,13 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - Static comparison of two APKs: package/version, signer, permissions, exported components and file hash.
 - APK set backup ZIP with per-file SHA-256, archive readability, manifest presence, DEX/native-library counts, package/version and signer consistency notes.
 
+### Advanced owner-authorized modification and billing labs
+
+- **Advanced APK modification lab:** scans a bounded set of small text-like entries under `assets/` and `res/raw/`, lets the owner edit a selected entry, rebuilds the APK ZIP while preserving unchanged entries, removes stale APK signature blocks, calculates an output SHA-256 fingerprint, and exports an unsigned modified APK. The current text patcher has limits of 100 MB source APK, 256 KB edited entry, 8,000 ZIP entries, 30 MB per copied entry and 150 MB expanded output. Sign the output with your own keystore and validate it before installing.
+- The patcher deliberately does not edit binary AndroidManifest.xml, compiled `resources.arsc`, layouts, icons, DEX, native libraries or third-party billing/license logic. Existing Smali DEX disassembly/rebuild and signing tools remain separate workflows. Full binary resource editing/recompilation is not implemented.
+- **License / IAP emulation lab:** provides a locally persisted mock state machine for an owner-defined product ID, including purchased, pending, cancelled, expired, refunded/revoked, grace period, account hold, invalid license and restore events. It records a timestamped local event log per package. These are simulated QA events only; no Play Store request, receipt, payment, real entitlement or backend call is made.
+- The simulator does not bypass licensing, fake a real Google Play receipt, or unlock paid features in another app. Production testing still requires Play Console license testers/test tracks, official Play Billing integration, server-side purchase-token verification, idempotent entitlement handling, acknowledgement/consumption, Real-time Developer Notifications and audit logs.
+
 ### Install and restore
 - Single APK install/update through Android's system Package Installer.
 - Multi-APK split installation through Android PackageInstaller sessions when the complete base + split set is available.
