@@ -115,3 +115,9 @@ This repository contains source code. A build is considered successful only when
 - The decoded APK manifest report now extracts Activity intent filters containing `<data>` elements and summarizes declared actions, categories, URI schemes, hosts and path constraints.
 - It prioritizes wildcard hosts, browsable custom schemes and HTTP schemes for manual review, and recommends validation of URI parsing, untrusted parameters, allowlists, authentication and object-level authorization.
 - The analyzer is static and heuristic. It does not launch links, exercise target activities, prove that an entry point is exploitable, or verify runtime authorization. Android manifest data-tag merging and platform-version behavior may require manual confirmation.
+
+### Client-scoped API authorization matrix
+
+- The black-box workspace now records manual access-control test cases with a route/resource label, client-owned actor role, expected ALLOW/DENY behavior, operator-observed result, evidence reference and timestamp.
+- Expected/observed mismatches are flagged as triage signals and retained in the engagement JSON export. The latest 100 cases are stored locally per package.
+- This is a manual evidence matrix, not an API crawler or automatic IDOR/BOLA exploit. Use only client-provided test accounts and records; verify suspected authorization failures with repeatable evidence and server-side context.
