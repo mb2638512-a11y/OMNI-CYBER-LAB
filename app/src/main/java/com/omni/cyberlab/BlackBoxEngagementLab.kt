@@ -93,7 +93,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 val payload = withContext(Dispatchers.IO) {
                     val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
                         val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192); var total = 0
-                        while (true) { val count = input.read(buffer); if (count < 0) break; total += count; require(total <= 20 * 1024 * 1024) { "Backup file exceeds 20 MB." }; output.write(buffer, 0, count) }
+                        while (true) { val count = input.read(buffer); if (count < 0) break; total += count; require(total <= 32 * 1024 * 1024) { "Backup file exceeds 32 MB." }; output.write(buffer, 0, count) }
                         output.toByteArray()
                     } ?: error("Cannot read selected backup.")
                     SecureWorkspaceBackup.decrypt(bytes, secret)
@@ -383,7 +383,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }
         Divider()
         Text("ENCRYPTED EVIDENCE VAULT", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
-        Text("Attachments are encrypted with AES-256-GCM using an Android Keystore key and stored inside this app. Maximum 10 MB per file. Export decrypts a copy to the destination you choose.", style = MaterialTheme.typography.bodySmall)
+        Text("Attachments are encrypted with AES-256-GCM using an Android Keystore key and stored inside this app. Limits: 10 MB per file, 20 MB and 50 files per workspace. Export decrypts a copy to the destination you choose.", style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = { evidenceImport.launch(arrayOf("*/*")) }, enabled = authorized, modifier = Modifier.fillMaxWidth()) { Text("Import evidence attachment (authorization required)") }
         val evidenceRecords = runCatching { JSONArray(evidenceJson) }.getOrElse { JSONArray() }
         Text("Encrypted attachments: ${evidenceRecords.length()}", style = MaterialTheme.typography.labelLarge)
