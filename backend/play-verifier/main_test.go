@@ -44,3 +44,18 @@ func TestSubscriptionExpiredNotEntitled(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if !got.Verified || got.Entitled { t.Fatalf("expired subscription must not be entitled: %+v",got) }
 }
+
+func TestWalletInputValidation(t *testing.T) {
+	if !validWalletIdentity("account-123", "GOLD", "transaction-0001") { t.Fatal("valid wallet identity rejected") }
+	invalid := []struct{user,currency,tx string}{
+		{"","GOLD","transaction-0001"},
+		{"user 1","GOLD","transaction-0001"},
+		{"user-1","gold","transaction-0001"},
+		{"user-1","GOLD","short"},
+		{"user-1","GOLD","transaction 0001"},
+		{"user-1","TOO_LONG_CURRENCY_123","transaction-0001"},
+	}
+	for _, v := range invalid {
+		if validWalletIdentity(v.user,v.currency,v.tx) { t.Fatalf("invalid wallet identity accepted: %+v",v) }
+	}
+}
