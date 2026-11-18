@@ -44,63 +44,63 @@ private val blackBoxChecks = listOf(
 @Composable
 fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modifier = Modifier) {
     val registryPrefs = remember(context, packageName) { context.getSharedPreferences("omni_blackbox_registry_$packageName", Context.MODE_PRIVATE) }
-    var activeEngagementId by remember(packageName, activeEngagementId) { mutableStateOf(registryPrefs.getString("active_engagement_id", "default") ?: "default") }
-    var engagementRegistryJson by remember(packageName) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
-    var newEngagementTitle by remember(packageName) { mutableStateOf("Mobile application security assessment") }
+    var activeEngagementId by remember(packageName) { mutableStateOf(registryPrefs.getString("active_engagement_id", "default") ?: "default") }
+    var engagementRegistryJson by remember(packageName, activeEngagementId) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
+    var newEngagementTitle by remember(packageName, activeEngagementId) { mutableStateOf("Mobile application security assessment") }
     val prefs = remember(context, packageName, activeEngagementId) {
         if (activeEngagementId == "default") context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
         else context.getSharedPreferences("omni_blackbox_${packageName}_$activeEngagementId", Context.MODE_PRIVATE)
     }
     val scope = rememberCoroutineScope()
-    var target by remember(packageName) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
-    var clientName by remember(packageName) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
-    var engagementName by remember(packageName) { mutableStateOf(prefs.getString("engagement_name", "Mobile application security assessment") ?: "Mobile application security assessment") }
-    var engagementStatus by remember(packageName) { mutableStateOf(prefs.getString("engagement_status", "PLANNED") ?: "PLANNED") }
-    var engagementReference by remember(packageName) { mutableStateOf(prefs.getString("engagement_reference", "") ?: "") }
-    var engagementSnapshotsJson by remember(packageName) { mutableStateOf(prefs.getString("engagement_snapshots", "[]") ?: "[]") }
-    var billingCase by remember(packageName) { mutableIntStateOf(0) }
-    var billingOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
-    var billingEvidence by remember(packageName) { mutableStateOf("") }
-    var billingJson by remember(packageName) { mutableStateOf(prefs.getString("billing_lifecycle_records", "[]") ?: "[]") }
-    var apiHosts by remember(packageName) { mutableStateOf(prefs.getString("hosts", "") ?: "") }
-    var exclusions by remember(packageName) { mutableStateOf(prefs.getString("exclusions", "") ?: "") }
-    var testWindow by remember(packageName) { mutableStateOf(prefs.getString("window", "Client-agreed schedule") ?: "Client-agreed schedule") }
-    var authorized by remember(packageName) { mutableStateOf(prefs.getBoolean("authorized", false)) }
-    var notes by remember(packageName) { mutableStateOf(prefs.getString("notes", "") ?: "") }
-    var checked by remember(packageName) { mutableStateOf(blackBoxChecks.indices.filter { prefs.getBoolean("check_$it", false) }.toSet()) }
+    var target by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
+    var clientName by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
+    var engagementName by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("engagement_name", "Mobile application security assessment") ?: "Mobile application security assessment") }
+    var engagementStatus by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("engagement_status", "PLANNED") ?: "PLANNED") }
+    var engagementReference by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("engagement_reference", "") ?: "") }
+    var engagementSnapshotsJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("engagement_snapshots", "[]") ?: "[]") }
+    var billingCase by remember(packageName, activeEngagementId) { mutableIntStateOf(0) }
+    var billingOutcome by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
+    var billingEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var billingJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("billing_lifecycle_records", "[]") ?: "[]") }
+    var apiHosts by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("hosts", "") ?: "") }
+    var exclusions by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("exclusions", "") ?: "") }
+    var testWindow by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("window", "Client-agreed schedule") ?: "Client-agreed schedule") }
+    var authorized by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getBoolean("authorized", false)) }
+    var notes by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("notes", "") ?: "") }
+    var checked by remember(packageName, activeEngagementId) { mutableStateOf(blackBoxChecks.indices.filter { prefs.getBoolean("check_$it", false) }.toSet()) }
     var status by remember { mutableStateOf("Define the client scope before starting an engagement.") }
-    var endpoint by remember(packageName) { mutableStateOf(prefs.getString("probe_endpoint", "") ?: "") }
-    var probeMethod by remember(packageName) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
+    var endpoint by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_endpoint", "") ?: "") }
+    var probeMethod by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
     var probeBusy by remember { mutableStateOf(false) }
-    var probeResult by remember(packageName) { mutableStateOf(prefs.getString("probe_result", "") ?: "") }
-    var probeHistoryJson by remember(packageName) { mutableStateOf(prefs.getString("probe_history", "[]") ?: "[]") }
-    var findingTitle by remember(packageName) { mutableStateOf("") }
-    var findingSeverity by remember(packageName) { mutableStateOf("MEDIUM") }
-    var findingCvss by remember(packageName) { mutableStateOf("") }
-    var findingCwe by remember(packageName) { mutableStateOf("") }
-    var findingSteps by remember(packageName) { mutableStateOf("") }
-    var findingImpact by remember(packageName) { mutableStateOf("") }
-    var findingFix by remember(packageName) { mutableStateOf("") }
-    var findingsJson by remember(packageName) { mutableStateOf(prefs.getString("findings_json", "[]") ?: "[]") }
-    var matrixResource by remember(packageName) { mutableStateOf("") }
-    var matrixActor by remember(packageName) { mutableStateOf("") }
-    var matrixExpected by remember(packageName) { mutableStateOf("DENY") }
-    var matrixObserved by remember(packageName) { mutableStateOf("NOT TESTED") }
-    var matrixEvidence by remember(packageName) { mutableStateOf("") }
-    var matrixJson by remember(packageName) { mutableStateOf(prefs.getString("authorization_matrix", "[]") ?: "[]") }
+    var probeResult by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_result", "") ?: "") }
+    var probeHistoryJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_history", "[]") ?: "[]") }
+    var findingTitle by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingSeverity by remember(packageName, activeEngagementId) { mutableStateOf("MEDIUM") }
+    var findingCvss by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingCwe by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingSteps by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingImpact by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingFix by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var findingsJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("findings_json", "[]") ?: "[]") }
+    var matrixResource by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var matrixActor by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var matrixExpected by remember(packageName, activeEngagementId) { mutableStateOf("DENY") }
+    var matrixObserved by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
+    var matrixEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var matrixJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("authorization_matrix", "[]") ?: "[]") }
     val sessionChecks = listOf("Token storage: secrets not exposed in logs, clipboard or world-readable files", "Logout invalidation: old session no longer accepted by client backend", "Session expiry: expired access token is rejected", "Refresh lifecycle: refresh token rotation and expiry behavior", "Refresh replay: previously rotated token is rejected", "Revocation: password reset or account disable invalidates sessions as designed", "Account switching: prior account data is not shown after switching users", "Concurrent sessions: device/session management follows product policy", "Authentication errors: responses do not disclose sensitive account details", "Session persistence: app restart behavior matches documented policy", "Sensitive screens: app switcher/background exposure is controlled", "Re-authentication: sensitive actions require fresh authentication where required")
-    var sessionCase by remember(packageName) { mutableStateOf(0) }
-    var sessionOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
-    var sessionEvidence by remember(packageName) { mutableStateOf("") }
-    var sessionRecordsJson by remember(packageName) { mutableStateOf(prefs.getString("session_security_records", "[]") ?: "[]") }
-    var localDataCase by remember(packageName) { mutableIntStateOf(0) }
-    var localDataOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
-    var localDataEvidence by remember(packageName) { mutableStateOf("") }
-    var localDataJson by remember(packageName) { mutableStateOf(prefs.getString("local_data_records", "[]") ?: "[]") }
-    var networkCase by remember(packageName) { mutableIntStateOf(0) }
-    var networkOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
-    var networkEvidence by remember(packageName) { mutableStateOf("") }
-    var networkJson by remember(packageName) { mutableStateOf(prefs.getString("network_security_records", "[]") ?: "[]") }
+    var sessionCase by remember(packageName, activeEngagementId) { mutableStateOf(0) }
+    var sessionOutcome by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
+    var sessionEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var sessionRecordsJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("session_security_records", "[]") ?: "[]") }
+    var localDataCase by remember(packageName, activeEngagementId) { mutableIntStateOf(0) }
+    var localDataOutcome by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
+    var localDataEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var localDataJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("local_data_records", "[]") ?: "[]") }
+    var networkCase by remember(packageName, activeEngagementId) { mutableIntStateOf(0) }
+    var networkOutcome by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
+    var networkEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var networkJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("network_security_records", "[]") ?: "[]") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
