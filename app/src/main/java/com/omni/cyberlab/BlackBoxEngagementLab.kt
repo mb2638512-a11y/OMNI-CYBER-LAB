@@ -140,6 +140,13 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 Text("Certificate valid now: ${p.optBoolean("certificateValidNow")} • Days remaining: ${p.optLong("certificateDaysRemaining")}", style = MaterialTheme.typography.bodySmall)
                 Text("Valid from: ${p.optString("certificateNotBefore")} • Expires: ${p.optString("certificateNotAfter")}", style = MaterialTheme.typography.labelSmall)
                 Text("Security headers: ${p.optJSONObject("securityHeaders")?.length() ?: 0} observed • Body bytes hashed: ${p.optInt("bodyBytesRead")}", style = MaterialTheme.typography.bodySmall)
+                val observedHeaders = p.optJSONObject("securityHeaders")
+                listOf("Strict-Transport-Security", "X-Content-Type-Options", "Content-Security-Policy", "Referrer-Policy", "Cache-Control").forEach { header ->
+                    val value = observedHeaders?.optString(header).orEmpty()
+                    Text("${if (value.isBlank()) "REVIEW • not observed" else "OBSERVED"} — $header${if (value.isNotBlank()) ": ${value.take(160)}" else ""}", style = MaterialTheme.typography.labelSmall)
+                }
+                if (!p.optBoolean("certificateValidNow")) Text("REVIEW • peer certificate is not currently valid according to device clock.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                else if (p.optLong("certificateDaysRemaining") in 0L..30L) Text("REVIEW • peer certificate expires within 30 days.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
         Text("This probe validates reachability and records response metadata; it does not prove an endpoint is vulnerable or secure.", style = MaterialTheme.typography.labelSmall)
