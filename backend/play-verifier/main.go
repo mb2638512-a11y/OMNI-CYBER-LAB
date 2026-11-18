@@ -95,6 +95,20 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, limit int64, dst any, rejectUnknown bool) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	dec := json.NewDecoder(r.Body)
+	if rejectUnknown { dec.DisallowUnknownFields() }
+	if err := dec.Decode(dst); err != nil { return err }
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		if err == nil { return errors.New("multiple JSON values are not allowed") }
+		return err
+	}
+	return nil
+}
+
 func (s *server) authorized(r *http.Request) bool {
 	header := r.Header.Get("Authorization")
 	const prefix = "Bearer "
@@ -108,11 +122,8 @@ func (s *server) authorized(r *http.Request) bool {
 func (s *server) verify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost { writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error":"POST required"}); return }
 	if !s.authorized(r) { writeJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthorized"}); return }
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 	var req verifyRequest
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
+	if err := decodeJSONBody(w, r, 16*1024, &req, true); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
 	if req.PackageName == "" || req.ProductID == "" || req.PurchaseToken == "" || req.UserID == "" || (req.PurchaseType != "product" && req.PurchaseType != "subscription") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error":"packageName, productId, purchaseToken, userId and purchaseType are required"}); return
 	}
@@ -165,10 +176,8 @@ func validWalletIdentity(userID, currency, transactionID string) bool {
 func (s *server) fulfillWallet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost { writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error":"POST required"}); return }
 	if !s.authorized(r) { writeJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthorized"}); return }
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 	var req walletFulfillRequest
-	dec := json.NewDecoder(r.Body); dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
+	if err := decodeJSONBody(w, r, 16*1024, &req, true); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
 	if req.PackageName=="" || req.ProductID=="" || req.PurchaseToken=="" || req.UserID=="" || !s.allowedPackages[req.PackageName] || !s.allowedProducts[req.ProductID] {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error":"missing or non-allowlisted purchase identity"}); return
 	}
@@ -211,10 +220,8 @@ func (s *server) fulfillWallet(w http.ResponseWriter, r *http.Request) {
 func (s *server) spendWallet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost { writeJSON(w,http.StatusMethodNotAllowed,map[string]string{"error":"POST required"}); return }
 	if !s.authorized(r) { writeJSON(w,http.StatusUnauthorized,map[string]string{"error":"unauthorized"}); return }
-	r.Body=http.MaxBytesReader(w,r.Body,8*1024)
 	var req walletSpendRequest
-	dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
-	if err:=dec.Decode(&req); err!=nil { writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid request body"}); return }
+	if err:=decodeJSONBody(w,r,8*1024,&req,true); err!=nil { writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid request body"}); return }
 	if !validWalletIdentity(req.UserID,req.Currency,req.TransactionID) || req.Amount<=0 || req.Amount>1000000000 {
 		writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid user, currency, transaction ID or amount"}); return
 	}
@@ -299,9 +306,8 @@ func (s *server) rtdn(w http.ResponseWriter, r *http.Request) {
  ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second); defer cancel()
  payload,err:=idtoken.Validate(ctx,auth,audience)
  if err!=nil || payload.Claims["email"]!=expectedEmail || payload.Claims["email_verified"]!=true { writeJSON(w,401,map[string]string{"error":"invalid Pub/Sub push identity"}); return }
- r.Body=http.MaxBytesReader(w,r.Body,128*1024)
- var envelope rtdnEnvelope; dec:=json.NewDecoder(r.Body)
- if err:=dec.Decode(&envelope); err!=nil || envelope.Message.Data=="" { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub envelope"}); return }
+ var envelope rtdnEnvelope
+ if err:=decodeJSONBody(w,r,128*1024,&envelope,false); err!=nil || envelope.Message.Data=="" { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub envelope"}); return }
  raw,err:=base64.StdEncoding.DecodeString(envelope.Message.Data); if err!=nil { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub data encoding"}); return }
  var data rtdnData; if err:=json.Unmarshal(raw,&data); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid RTDN payload"}); return }
  if data.TestNotification!=nil { writeJSON(w,200,map[string]string{"status":"test notification acknowledged"}); return }
@@ -324,9 +330,8 @@ func (s *server) purchaseAction(consume bool) http.HandlerFunc {
  return func(w http.ResponseWriter,r *http.Request) {
   if r.Method!=http.MethodPost { writeJSON(w,405,map[string]string{"error":"POST required"}); return }
   if !s.authorized(r) { writeJSON(w,401,map[string]string{"error":"unauthorized"}); return }
-  r.Body=http.MaxBytesReader(w,r.Body,16*1024)
-  var req purchaseActionRequest; dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
-  if err:=dec.Decode(&req); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid request body"}); return }
+   var req purchaseActionRequest
+   if err:=decodeJSONBody(w,r,16*1024,&req,true); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid request body"}); return }
   if req.PackageName=="" || req.ProductID=="" || req.PurchaseToken=="" || req.UserID=="" || !s.allowedPackages[req.PackageName] || !s.allowedProducts[req.ProductID] { writeJSON(w,403,map[string]string{"error":"missing or non-allowlisted purchase identity"}); return }
   ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second); defer cancel()
   hash:=sha256.Sum256([]byte(req.PurchaseToken)); tokenHash:=hex.EncodeToString(hash[:])
