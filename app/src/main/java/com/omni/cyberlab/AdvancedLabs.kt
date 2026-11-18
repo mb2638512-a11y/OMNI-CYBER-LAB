@@ -23,6 +23,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import java.security.MessageDigest
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val LabGreen = Color(0xFF55E6A5)
 private val LabMuted = Color(0xFF9AA6B2)
@@ -134,6 +136,12 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
     val diffExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
         if (uri != null && diffReport.isNotBlank()) scope.launch { try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(diffReport) } ?: error("Could not open report destination.") }; patchStatus = "Before/after diff report exported." } catch (e: Exception) { patchStatus = "Diff export failed: ${e.message}" } }
     }
+    val billingExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri != null) scope.launch { try {
+            val payload = JSONObject().put("packageName", packageName).put("productId", productId).put("simulatedState", purchaseState).put("generatedAt", java.text.DateFormat.getDateTimeInstance().format(java.util.Date())).put("events", JSONArray(eventLog.lines().filter { it.isNotBlank() }))
+            withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Could not open JSON destination.") }
+        } catch (e: Exception) { eventLog = (eventLog + "\nExport failed: ${e.message}").takeLast(12000) } }
+    }
     val productKey = "billing_product_$packageName"
     val productIdSaved = prefs.getString(productKey, "test.premium.monthly") ?: "test.premium.monthly"
     var productId by remember(packageName) { mutableStateOf(productIdSaved) }
@@ -179,7 +187,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
             OutlinedTextField(value = productId, onValueChange = { productId = it.take(180) }, modifier = Modifier.fillMaxWidth(), label = { Text("Your test product ID") }, singleLine = true)
             Text("Current simulated entitlement: $purchaseState", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             Text("These are local mock events only. No Google Play purchase, payment, receipt, account or backend is contacted.", color = LabWarn, fontSize = 10.sp)
-            val actions = listOf("PURCHASED" to "Simulate approved test purchase", "PENDING" to "Simulate pending purchase", "CANCELLED" to "Simulate user cancellation", "EXPIRED" to "Simulate subscription expiry", "REFUNDED" to "Simulate refund / revoke", "GRACE PERIOD" to "Simulate billing grace period", "ON HOLD" to "Simulate account hold", "LICENSE INVALID" to "Simulate invalid license response", "RESTORED" to "Simulate restore purchases")
+            val actions = listOf("PURCHASED" to "Simulate approved test purchase", "PENDING" to "Simulate pending purchase", "CANCELLED" to "Simulate user cancellation", "RENEWED" to "Simulate subscription renewal", "PAUSED" to "Simulate subscription pause", "EXPIRED" to "Simulate subscription expiry", "REFUNDED" to "Simulate refund", "REVOKED" to "Simulate entitlement revocation", "GRACE PERIOD" to "Simulate billing grace period", "ON HOLD" to "Simulate account hold", "LICENSE INVALID" to "Simulate invalid license response", "RESTORED" to "Simulate restore purchases")
             actions.forEach { (state, label) ->
                 OutlinedButton(onClick = { if (productId.isBlank()) recordBilling("ERROR", "Product ID required") else recordBilling(state, "Mock event for $productId; no real entitlement granted.") }, modifier = Modifier.fillMaxWidth()) { Text(label, fontSize = 10.sp) }
             }
@@ -187,6 +195,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
                 OutlinedButton(onClick = { recordBilling("NOT PURCHASED", "Reset local test state") }, modifier = Modifier.weight(1f)) { Text("Reset state") }
                 OutlinedButton(onClick = { eventLog = ""; prefs.edit().remove("billing_log_$packageName").apply() }, modifier = Modifier.weight(1f)) { Text("Clear log") }
             }
+            OutlinedButton(onClick = { billingExportLauncher.launch("omni-billing-test-${packageName.substringAfterLast(".")}.json") }, modifier = Modifier.fillMaxWidth()) { Text("Export billing test evidence (JSON)") }
             Text("EVENT AUDIT LOG", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 10.sp)
             if (eventLog.isBlank()) Text("No simulated events yet.", color = LabMuted, fontSize = 10.sp) else LazyColumn(Modifier.heightIn(max = 220.dp)) { items(eventLog.lines()) { Text(it, color = LabMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 3.dp)) } }
             Text("Production integration still requires your own Play Console license testers, test-track product IDs, official Play Billing client, server-side purchase-token verification, idempotent entitlement service, acknowledgement/consumption, RTDN handling and audit logging. This local simulator is a QA harness, not a replacement for those systems.", color = LabWarn, fontSize = 9.sp)
