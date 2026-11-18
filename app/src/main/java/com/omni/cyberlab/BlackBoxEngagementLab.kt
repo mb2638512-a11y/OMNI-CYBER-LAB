@@ -22,6 +22,8 @@ import java.util.Date
 private val localDataChecks = listOf("Sensitive values are not stored in plaintext preferences", "Database files and backups follow app-private access controls", "Logs exclude credentials, tokens, personal data and payment details", "Clipboard use avoids copying secrets or marks sensitive clips appropriately", "Cache and temporary files do not retain sensitive records", "Shared/external storage contains no private app data", "Android backup and data-extraction rules match data sensitivity", "Screenshots and recent-app previews protect sensitive screens", "Local encryption keys use Android Keystore where required", "Logout/account switching clears or isolates user-specific local data")
 private val networkChecks = listOf("All production API endpoints require HTTPS", "Cleartext traffic is disabled or narrowly justified", "TLS certificate validation uses platform trust checks", "No trust-all hostname verifier or permissive trust manager is present", "Sensitive data is not placed in URL query strings", "Authentication material is not logged or exposed in error messages", "Redirect behavior does not downgrade HTTPS or leak credentials", "API responses enforce authorization server-side for each object", "Security headers and cache directives are appropriate for sensitive responses", "Network failures and offline mode fail closed for protected operations")
 
+private val billingLifecycleChecks = listOf("Purchase is verified by the trusted backend, not client UI state alone", "Pending purchases do not unlock paid entitlements prematurely", "Purchase acknowledgement and consumption follow product type", "Duplicate purchase callbacks are idempotent", "Restore purchases recovers only valid purchases for the signed-in account", "Refund and revocation events remove or adjust entitlements server-side", "Expired subscriptions stop granting access after the allowed grace period", "Grace period and account hold states follow documented policy", "Account switching does not transfer another user entitlement", "Product IDs, package name and purchase tokens are validated server-side", "Sandbox and production billing environments are separated", "Client tampering cannot create a server-confirmed paid entitlement")
+
 private val blackBoxChecks = listOf(
     "Public attack-surface mapping: app links, exported components and documented API hosts",
     "Authentication and session lifecycle using client-provided test accounts",
@@ -42,6 +44,14 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     val prefs = remember(context, packageName) { context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     var target by remember(packageName) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
+    var clientName by remember(packageName) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
+    var engagementName by remember(packageName) { mutableStateOf(prefs.getString("engagement_name", "Mobile application security assessment") ?: "Mobile application security assessment") }
+    var engagementStatus by remember(packageName) { mutableStateOf(prefs.getString("engagement_status", "PLANNED") ?: "PLANNED") }
+    var engagementReference by remember(packageName) { mutableStateOf(prefs.getString("engagement_reference", "") ?: "") }
+    var billingCase by remember(packageName) { mutableIntStateOf(0) }
+    var billingOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
+    var billingEvidence by remember(packageName) { mutableStateOf("") }
+    var billingJson by remember(packageName) { mutableStateOf(prefs.getString("billing_lifecycle_records", "[]") ?: "[]") }
     var apiHosts by remember(packageName) { mutableStateOf(prefs.getString("hosts", "") ?: "") }
     var exclusions by remember(packageName) { mutableStateOf(prefs.getString("exclusions", "") ?: "") }
     var testWindow by remember(packageName) { mutableStateOf(prefs.getString("window", "Client-agreed schedule") ?: "Client-agreed schedule") }
@@ -100,6 +110,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("sessionSecurityTests", JSONArray(sessionRecordsJson))
                 .put("localDataSecurityTests", JSONArray(localDataJson))
                 .put("networkSecurityTests", JSONArray(networkJson))
+                .put("clientName", clientName)
+                .put("engagementName", engagementName)
+                .put("engagementStatus", engagementStatus)
+                .put("engagementReference", engagementReference)
+                .put("billingLifecycleTests", JSONArray(billingJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -108,6 +123,13 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }
     }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+        Text("Organize assessments by client and engagement reference. Do not store client secrets or personal contact details here.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(clientName, { clientName = it; prefs.edit().putString("client_name", it).apply() }, label = { Text("Client / organization") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(engagementName, { engagementName = it; prefs.edit().putString("engagement_name", it).apply() }, label = { Text("Engagement title") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(engagementReference, { engagementReference = it; prefs.edit().putString("engagement_reference", it).apply() }, label = { Text("PO / engagement reference (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("PLANNED", "ACTIVE", "PAUSED", "COMPLETED", "CLOSED").forEach { value -> FilterChip(selected = engagementStatus == value, onClick = { engagementStatus = value; prefs.edit().putString("engagement_status", value).apply() }, label = { Text(value) }) } }
+        Divider()
         Text("BLIND / BLACK-BOX PENETRATION TEST", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Start with only the client-provided app and public-facing information. Keep the test low-noise where agreed, record evidence, and do not assume hidden assets are in scope.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(target, { target = it; prefs.edit().putString("target", it).apply() }, label = { Text("Target package / app / domain") }, modifier = Modifier.fillMaxWidth())
@@ -328,6 +350,32 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         val networkFailCount = (0 until networkRecords.length()).count { networkRecords.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
         val networkReviewCount = (0 until networkRecords.length()).count { networkRecords.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
         Text("Saved: ${networkRecords.length()} • $networkPassCount PASS • $networkFailCount FAIL • $networkReviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
+        Divider()
+        Text("PURCHASE & SUBSCRIPTION SECURITY LAB", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Use official billing sandbox and client-owned test accounts. These checks assess server entitlement correctness; they do not alter real purchases or bypass payment.", style = MaterialTheme.typography.bodySmall)
+        Text("Billing check ${billingCase + 1} of ${billingLifecycleChecks.size}", style = MaterialTheme.typography.labelMedium)
+        Text(billingLifecycleChecks[billingCase], style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { billingCase = (billingCase - 1).coerceAtLeast(0); billingOutcome = "NOT TESTED"; billingEvidence = "" }, enabled = billingCase > 0) { Text("Previous") }
+            OutlinedButton(onClick = { billingCase = (billingCase + 1).coerceAtMost(billingLifecycleChecks.lastIndex); billingOutcome = "NOT TESTED"; billingEvidence = "" }, enabled = billingCase < billingLifecycleChecks.lastIndex) { Text("Next") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("NOT TESTED", "PASS", "FAIL", "NEEDS REVIEW").forEach { value -> FilterChip(selected = billingOutcome == value, onClick = { billingOutcome = value }, label = { Text(value) }) } }
+        OutlinedTextField(billingEvidence, { billingEvidence = it }, label = { Text("Redacted sandbox evidence reference / notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val arr = runCatching { JSONArray(billingJson) }.getOrElse { JSONArray() }
+            arr.put(JSONObject().put("id", "BILL-${System.currentTimeMillis()}").put("testCase", billingLifecycleChecks[billingCase]).put("operatorOutcome", billingOutcome).put("evidenceReference", billingEvidence.trim()).put("recordedAt", DateFormat.getDateTimeInstance().format(Date())).put("status", "OPERATOR RECORDED • NOT INDEPENDENTLY VERIFIED"))
+            val bounded = JSONArray()
+            for (index in (arr.length() - 100).coerceAtLeast(0) until arr.length()) bounded.put(arr.getJSONObject(index))
+            billingJson = bounded.toString()
+            prefs.edit().putString("billing_lifecycle_records", billingJson).apply()
+            billingEvidence = ""
+            status = "Billing lifecycle observation saved locally."
+        }, enabled = authorized && billingOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save billing lifecycle result") }
+        val billingRecords = runCatching { JSONArray(billingJson) }.getOrElse { JSONArray() }
+        val billingPass = (0 until billingRecords.length()).count { billingRecords.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val billingFail = (0 until billingRecords.length()).count { billingRecords.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val billingReview = (0 until billingRecords.length()).count { billingRecords.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Saved: ${billingRecords.length()} • $billingPass PASS • $billingFail FAIL • $billingReview NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
