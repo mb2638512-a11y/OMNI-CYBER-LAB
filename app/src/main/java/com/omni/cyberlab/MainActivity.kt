@@ -2472,7 +2472,8 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
     val completedSteps = (0 until totalSteps).count { savedChecks.getOrNull(it) == '1' }
     val evidence = prefs.getString("evidence_" + app.pkg, "") ?: ""
     val timeline = prefs.getString("timeline_" + app.pkg, "") ?: ""
-    val evidenceCorrelations = remember(findings, evidence, timeline) { securityEvidenceCorrelations(findings, evidence, timeline) }    val orchestratorPrefs = remember(app.pkg) { context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE) }
+    val evidenceCorrelations = remember(findings, evidence, timeline) { securityEvidenceCorrelations(findings, evidence, timeline) }
+    val orchestratorPrefs = remember(app.pkg) { context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE) }
     val regressionHistory = remember(app.pkg) { try { org.json.JSONArray(orchestratorPrefs.getString("history_" + app.pkg, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() } }
     val historicalMatchCounts = remember(regressionHistory) { (0 until regressionHistory.length()).mapNotNull { index ->
         val snapshot = regressionHistory.optJSONObject(index) ?: return@mapNotNull null
