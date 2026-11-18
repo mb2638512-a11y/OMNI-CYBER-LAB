@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   powershell-validation:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Parse PowerShell script
@@ -30,6 +30,9 @@ jobs:
             exit 1
           }
           Write-Host "PowerShell syntax validation passed."
+      - name: Validate on-device shell workflow syntax
+        shell: bash
+        run: bash -n tools/apktool-workbench/omni-apktool-android.sh
       - name: Check pinned Apktool integrity and honest report states
         shell: pwsh
         run: |
@@ -39,3 +42,8 @@ jobs:
             if ($script -notmatch [regex]::Escape($marker)) { throw "Required workbench/report marker missing: $marker" }
           }
           Write-Host "Integrity pin and report markers validated."
+          $android = Get-Content "tools/apktool-workbench/omni-apktool-android.sh" -Raw
+          foreach ($marker in @("apktool b --use-aapt2", "zipalign", "apksigner", "NOT TESTED", "baseline-resources.sha256")) {
+            if ($android -notmatch [regex]::Escape($marker)) { throw "On-device workflow marker missing: $marker" }
+          }
+          Write-Host "On-device ARM64 workflow markers validated."
