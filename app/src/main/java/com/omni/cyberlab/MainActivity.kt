@@ -2500,7 +2500,7 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
     var report by remember(app.pkg) { mutableStateOf(prefs.getString("report_" + app.pkg, "") ?: "") }
     var ranAt by remember(app.pkg) { mutableStateOf(prefs.getLong("ran_at_" + app.pkg, 0L)) }
     var comparison by remember(app.pkg) { mutableStateOf(prefs.getString("comparison_" + app.pkg, "") ?: "") }
-    var historyCount by remember(app.pkg) { mutableIntStateOf(try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 }) }
+    var historyCount by remember(app.pkg) { mutableStateOf(try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 }) }
     var historyExpanded by remember(app.pkg) { mutableStateOf(false) }
     val results = remember(report) { report.lines().filter { it.startsWith("[") } }
     val pass = results.count { it.startsWith("[PASS]") }
