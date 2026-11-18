@@ -30,10 +30,10 @@ jobs:
       - name: Publish GitHub release with direct APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.9.0
-          name: OMNI CYBER LAB v0.9.0
+          tag_name: v0.10.0
+          name: OMNI CYBER LAB v0.10.0
           body: |
-            OMNI CYBER LAB v0.9.0 — Android debug APK.
+            OMNI CYBER LAB v0.10.0 — Android debug APK.
 
             Includes installed-app and APK inventory, static security orchestration, owner-authorized APK resource engineering companion workflows, Shizuku read-only diagnostics, adversarial purchase and virtual-economy QA simulations, evidence reports, and expanded automated regression tests.
 
