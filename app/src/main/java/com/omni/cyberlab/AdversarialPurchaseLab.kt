@@ -98,7 +98,7 @@ fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier)
                     }
                 }
                 Text("Owner-side ad work: configure Google test ad unit IDs, staging remote-config flags, consent gating and an explicit ad-free entitlement in your own app. The APK marker scanner is inventory only; automatic removal from arbitrary installed apps is not provided.", color = amber, fontSize = 10.sp)
-                Text("Play verification: backend already calls Google Android Publisher API, checks exact package/SKU, rejects pending/canceled products, checks subscription expiry, hashes purchase tokens and prevents cross-account reuse. Wallet fulfillment uses server-configured grants and idempotency. RTDN / Pub/Sub revocation sync and automatic acknowledge/consume remain future work.", color = muted, fontSize = 10.sp)
+                Text("Play verification (backend): Google Android Publisher API verification, exact package/SKU checks, pending/expired/revoked state handling, token hashing and cross-account replay protection. Wallet fulfillment uses server-configured grants and idempotency. RTDN/Pub/Sub push handling validates the OIDC service identity and processes subscription updates; explicit acknowledge and consume endpoints are implemented. Production deployment still requires correct Google service credentials, Pub/Sub audience/service-account configuration and end-to-end Play test-track validation.", color = muted, fontSize = 10.sp)
             }
         }
     }
