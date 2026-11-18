@@ -96,9 +96,13 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func (s *server) authorized(r *http.Request) bool {
-	header := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if len(s.apiKey) == 0 || len(header) != len(s.apiKey) { return false }
-	return subtle.ConstantTimeCompare([]byte(header), s.apiKey) == 1
+	header := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) { return false }
+	token := strings.TrimPrefix(header, prefix)
+	if token == "" || strings.TrimSpace(token) != token || strings.ContainsAny(token, " \\t\\r\\n") { return false }
+	if len(s.apiKey) == 0 || len(token) != len(s.apiKey) { return false }
+	return subtle.ConstantTimeCompare([]byte(token), s.apiKey) == 1
 }
 
 func (s *server) verify(w http.ResponseWriter, r *http.Request) {
