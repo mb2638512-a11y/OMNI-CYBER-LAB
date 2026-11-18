@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
+import android.util.Base64
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -68,8 +70,15 @@ object SecureWorkspaceBackup {
                 is Set<*> -> values.put(key, org.json.JSONArray(value.filterIsInstance<String>()))
             }
         }
+        val evidenceIndex = runCatching { JSONArray(prefs.getString("secure_evidence_index", "[]")) }.getOrElse { JSONArray() }
+        val evidencePayload = JSONArray()
+        for (index in 0 until evidenceIndex.length()) {
+            val item = evidenceIndex.optJSONObject(index) ?: continue
+            val bytes = SecureEvidenceVault.read(context, engagementId, item.optString("id"))
+            evidencePayload.put(JSONObject().put("label", item.optString("label")).put("data", Base64.encodeToString(bytes, Base64.NO_WRAP)))
+        }
         val payload = JSONObject().put("format", "OMNI-CYBER-LAB-WORKSPACE").put("version", 1)
-            .put("packageName", packageName).put("engagementId", engagementId).put("preferences", values)
+            .put("packageName", packageName).put("engagementId", engagementId).put("preferences", values).put("evidenceFiles", evidencePayload)
         return payload.toString().toByteArray(Charsets.UTF_8)
     }
 
@@ -95,5 +104,15 @@ object SecureWorkspaceBackup {
             }
         }
         editor.putBoolean("authorized", false).putString("secure_evidence_index", "[]").apply()
+        SecureEvidenceVault.clear(context, engagementId)
+        val restoredEvidence = JSONArray()
+        val evidenceFiles = json.optJSONArray("evidenceFiles") ?: JSONArray()
+        for (index in 0 until evidenceFiles.length()) {
+            val item = evidenceFiles.optJSONObject(index) ?: continue
+            val bytes = Base64.decode(item.optString("data"), Base64.NO_WRAP)
+            val record = SecureEvidenceVault.importBytes(context, engagementId, item.optString("label"), bytes)
+            restoredEvidence.put(record)
+        }
+        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString("secure_evidence_index", restoredEvidence.toString()).apply()
     }
 }
