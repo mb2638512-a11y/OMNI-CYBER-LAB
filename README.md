@@ -155,3 +155,8 @@ This repository contains source code. A build is considered successful only when
 
 - Structured findings now accept an optional CVSS v3.1 base score (validated to 0.0–10.0) and CWE reference, alongside severity, reproduction steps, impact/evidence and remediation.
 - CVSS score and CWE are operator-entered metadata; the app does not calculate or independently validate a CVSS vector. Findings remain UNVERIFIED until supported by evidence and review.
+
+### Finding remediation workflow
+
+- Evidence-backed findings now show a per-finding workflow status: OPEN → IN PROGRESS → READY TO RETEST → RETEST RECORDED • REVIEW → CLOSED. Operators can advance or reopen a finding; status changes are timestamped and saved locally.
+- A dashboard summary counts findings by workflow state. These are operator-managed workflow labels, not automatic proof of remediation or a passed retest. Use a fresh test and attach evidence before closing a finding.
