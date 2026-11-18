@@ -1689,6 +1689,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             )),
             WorkspaceCategory("Network & connectivity", "Network-facing security checks", listOf(
                 WorkspaceFeature("Network traffic", "Owner-led network inspection checklist for a debug build and controlled proxy/test environment.", "MANUAL TEST PLAN", true),
+                WorkspaceFeature("Guided runtime test session", "Run a saved, owner-led runtime checklist, record observations and track each test step for this app.", "READY • GUIDED SESSION", true),
                 WorkspaceFeature("API endpoints", "Run a one-request HTTPS endpoint review against a URL supplied by the app owner.", "READY • MANUAL URL", true),
                 WorkspaceFeature("TLS & certificates", "Check TLS negotiation, peer certificate validity and selected response security headers.", "READY • MANUAL URL", true),
                 WorkspaceFeature("Offline behavior", "Checklist for airplane-mode, retry, queue and recovery testing on an app you own.", "TEST PLAN READY", true)
@@ -2106,6 +2107,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }
 
                             }
+                            if (current.title == "Guided runtime test session") {
+                                GuidedRuntimeTestPanel(context, app.pkg)
+                            }
                             if (current.title == "API endpoints" || current.title == "TLS & certificates") {
                                 EndpointAuditPanel()
                             }
@@ -2401,5 +2405,38 @@ private fun Check(label: String, state: String, tint: Color) {
         Spacer(Modifier.width(8.dp))
         Text(label, fontSize = 10.sp, modifier = Modifier.weight(1f))
         Text(state, color = tint, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+
+@Composable
+private fun GuidedRuntimeTestPanel(context: Context, packageName: String) {
+    val checks = listOf("Launch and normal navigation", "Login, logout and session expiry", "Permission prompts and denial handling", "Background / foreground transition", "Airplane mode, reconnect and retry", "Invalid input and boundary handling", "Sensitive data not exposed in UI or logs", "Deep links and exported entry points", "Crash / ANR observation after test actions", "Purchase flow in official sandbox only")
+    val prefs = remember(packageName) { context.getSharedPreferences("runtime_test_sessions", Context.MODE_PRIVATE) }
+    val stateKey = "checks_" + packageName
+    val noteKey = "notes_" + packageName
+    val startedKey = "started_" + packageName
+    val completed = remember(packageName) { mutableStateListOf<Boolean>().apply { val saved = prefs.getString(stateKey, "") ?: ""; checks.indices.forEach { add(saved.getOrNull(it) == '1') } } }
+    var notes by remember(packageName) { mutableStateOf(prefs.getString(noteKey, "") ?: "") }
+    var startedAt by remember(packageName) { mutableStateOf(prefs.getLong(startedKey, 0L)) }
+    val doneCount = completed.count { it }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text("GUIDED OWNER-LED RUNTIME SESSION", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text("Test only your own app or an app you are authorized to assess. Checked items are manual observations, not automated passes or proof of security.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Text("$doneCount / ${checks.size} steps recorded", fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(if (startedAt == 0L) "Session not started" else "Started: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(startedAt)), color = Grey, fontSize = 9.sp) }
+            Button(onClick = { startedAt = System.currentTimeMillis(); prefs.edit().putLong(startedKey, startedAt).apply() }) { Text(if (startedAt == 0L) "Start session" else "Restart") }
+        }
+        LinearProgressIndicator(progress = { doneCount.toFloat() / checks.size.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), color = Green)
+        checks.forEachIndexed { index, label ->
+            Row(Modifier.fillMaxWidth().clickable { completed[index] = !completed[index]; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply() }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = completed[index], onCheckedChange = { checked -> completed[index] = checked; prefs.edit().putString(stateKey, completed.joinToString("") { if (it) "1" else "0" }).apply() })
+                Text(label, color = if (completed[index]) Green else Grey, fontSize = 10.sp)
+            }
+        }
+        OutlinedTextField(value = notes, onValueChange = { notes = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Observations / evidence notes") }, minLines = 3)
+        Button(onClick = { prefs.edit().putString(noteKey, notes).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save session notes") }
+        OutlinedButton(onClick = { completed.indices.forEach { completed[it] = false }; notes = ""; startedAt = 0L; prefs.edit().remove(stateKey).remove(noteKey).remove(startedKey).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear this app's session") }
+        Text("Progress and notes are stored locally on this device under this package name. No traffic interception, TLS bypass, payment unlocking or background monitoring is performed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
