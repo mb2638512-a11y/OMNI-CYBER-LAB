@@ -21,6 +21,10 @@ data class ScopedProbeResult(
     val certificateSubject: String,
     val certificateIssuer: String,
     val certificateSha256: String,
+    val certificateNotBefore: String,
+    val certificateNotAfter: String,
+    val certificateValidNow: Boolean,
+    val certificateDaysRemaining: Long,
     val bodyBytesRead: Int,
     val bodySha256: String,
     val note: String
@@ -31,7 +35,10 @@ data class ScopedProbeResult(
         .put("securityHeaders", JSONObject(securityHeaders))
         .put("tlsProtocol", tlsProtocol).put("tlsCipher", tlsCipher)
         .put("certificateSubject", certificateSubject).put("certificateIssuer", certificateIssuer)
-        .put("certificateSha256", certificateSha256).put("bodyBytesRead", bodyBytesRead)
+                .put("certificateSha256", certificateSha256)
+        .put("certificateNotBefore", certificateNotBefore).put("certificateNotAfter", certificateNotAfter)
+        .put("certificateValidNow", certificateValidNow).put("certificateDaysRemaining", certificateDaysRemaining)
+        .put("bodyBytesRead", bodyBytesRead)
         .put("bodySha256", bodySha256).put("note", note)
 }
 
@@ -73,6 +80,8 @@ suspend fun runScopedEndpointProbe(rawUrl: String, allowedHosts: Set<String>, me
         } ?: ByteArray(0) else ByteArray(0)
         val cert = connection.serverCertificates.firstOrNull() as? java.security.cert.X509Certificate
         val certHash = cert?.encoded?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02X".format(b) } } ?: ""
-        ScopedProbeResult(safeUrl, status, duration, connection.contentType ?: "", connection.getHeaderField("Content-Length") ?: "", headers, "", connection.cipherSuite ?: "", cert?.subjectX500Principal?.name ?: "", cert?.issuerX500Principal?.name ?: "", certHash, body.size, if (body.isNotEmpty()) MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02X".format(it) } else "", "One HTTPS request only; redirects are not followed; response body is not stored. HTTP status and missing headers require manual interpretation.")
+        val certValidNow = cert?.let { runCatching { it.checkValidity(); true }.getOrDefault(false) } ?: false
+        val certDaysRemaining = cert?.let { (it.notAfter.time - System.currentTimeMillis()) / 86_400_000L } ?: -1L
+        ScopedProbeResult(safeUrl, status, duration, connection.contentType ?: "", connection.getHeaderField("Content-Length") ?: "", headers, "", connection.cipherSuite ?: "", cert?.subjectX500Principal?.name ?: "", cert?.issuerX500Principal?.name ?: "", certHash, cert?.notBefore?.toString() ?: "", cert?.notAfter?.toString() ?: "", certValidNow, certDaysRemaining, body.size, if (body.isNotEmpty()) MessageDigest.getInstance("SHA-256").digest(body).joinToString("") { "%02X".format(it) } else "", "One HTTPS request only; redirects are not followed; response body is not stored. HTTP status and missing headers require manual interpretation.")
     } finally { connection.disconnect() }
 }
