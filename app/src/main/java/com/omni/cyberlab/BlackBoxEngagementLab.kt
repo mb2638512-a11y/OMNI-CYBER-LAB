@@ -209,6 +209,15 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                     appendLine("Package: $packageName")
                     appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
                     appendLine("Authorization confirmed by operator: $authorized")
+                    val executiveFindings = JSONArray(findingsJson)
+                    val severitySummary = listOf("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO").joinToString(" • ") { severity ->
+                        "$severity ${(0 until executiveFindings.length()).count { executiveFindings.optJSONObject(it)?.optString("severity") == severity }}"
+                    }
+                    appendLine("EXECUTIVE SUMMARY")
+                    appendLine("Coverage recorded: ${checked.size}/${blackBoxChecks.size}")
+                    appendLine("Finding records: ${executiveFindings.length()} • $severitySummary")
+                    appendLine("Encrypted evidence attachments: ${JSONArray(evidenceJson).length()} (stored separately; not embedded)")
+                    appendLine("Assessment state: $engagementStatus • Report generated from operator-entered records")
                     appendLine()
                     appendLine("SCOPE")
                     appendLine("Allowed API hosts: $apiHosts")
