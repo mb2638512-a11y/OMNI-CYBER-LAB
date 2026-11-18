@@ -38,6 +38,8 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 - **License / IAP emulation lab:** provides a locally persisted mock state machine for an owner-defined product ID, including purchased, pending, cancelled, expired, refunded/revoked, grace period, account hold, invalid license and restore events. It records a timestamped local event log per package. These are simulated QA events only; no Play Store request, receipt, payment, real entitlement or backend call is made.
 - The simulator does not bypass licensing, fake a real Google Play receipt, or unlock paid features in another app. Production testing still requires Play Console license testers/test tracks, official Play Billing integration, server-side purchase-token verification, idempotent entitlement handling, acknowledgement/consumption, Real-time Developer Notifications and audit logs.
 
+- APK before/after diff: compares ZIP-entry SHA-256 hashes and reports added, removed and changed entries, plus whole-file fingerprints; exports a text evidence report. This is a structural archive diff, not a semantic diff of compiled resources or a signature validation.
+- Billing QA evidence can be exported as JSON, including package, test product ID, simulated entitlement state, generation time and local event-log lines. Subscription mock actions include renewal, pause and revoke in addition to purchase, pending, cancel, expiry, refund, grace period, hold, invalid-license and restore.
 ### Install and restore
 - Single APK install/update through Android's system Package Installer.
 - Multi-APK split installation through Android PackageInstaller sessions when the complete base + split set is available.
