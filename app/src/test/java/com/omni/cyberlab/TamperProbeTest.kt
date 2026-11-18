@@ -32,7 +32,7 @@ class TamperProbeTest {
                 assertNull(zip.getEntry("META-INF/MANIFEST.MF"))
                 val marker = zip.getInputStream(zip.getEntry("assets/lucky_patches_tamper_probe.txt")).bufferedReader().use { it.readText() }
                 assertTrue(marker.contains("inert asset insertion only"))
-                assertEquals(4, zip.size())
+                assertEquals(3, zip.size())
             }
             ZipFile(source).use { zip ->
                 assertNotNull(zip.getEntry("META-INF/CERT.RSA"))
