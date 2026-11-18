@@ -86,7 +86,7 @@ object SecureWorkspaceBackup {
         require(payload.size <= MAX_BACKUP) { "Workspace backup is too large." }
         val json = JSONObject(payload.toString(Charsets.UTF_8))
         require(json.optString("format") == "OMNI-CYBER-LAB-WORKSPACE" && json.optInt("version") == 1) { "Unsupported workspace backup format." }
-        require(json.optString("packageName") == packageName && json.optString("engagementId") == engagementId) { "Backup belongs to a different app package or engagement workspace." }
+        require(json.optString("packageName") == packageName) { "Backup belongs to a different app package." }
         val values = json.getJSONObject("preferences")
         val prefsName = if (engagementId == "default") "omni_blackbox_$packageName" else "omni_blackbox_${packageName}_$engagementId"
         val editor = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear()
