@@ -64,8 +64,14 @@ suspend fun runScopedEndpointProbe(rawUrl: String, allowedHosts: Set<String>, me
     try {
         val status = connection.responseCode
         val duration = (System.nanoTime() - started) / 1_000_000L
-        val headerNames = listOf("Strict-Transport-Security", "Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Cache-Control", "Server")
-        val headers = headerNames.mapNotNull { key -> connection.getHeaderField(key)?.let { key to it.take(512) } }.toMap()
+        val headerNames = listOf("Strict-Transport-Security", "Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Cache-Control", "Server", "Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers")
+        val headers = headerNames.mapNotNull { key -> connection.getHeaderField(key)?.let { key to it.take(512) } }.toMap().toMutableMap()
+        // Store cookie security attributes only; never persist cookie names or values.
+        connection.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }.flatMap { it.value.orEmpty() }.take(20).forEachIndexed { index, cookie ->
+            val lower = cookie.lowercase()
+            val flags = listOf("Secure", "HttpOnly", "SameSite=Strict", "SameSite=Lax", "SameSite=None").filter { lower.contains(it.lowercase()) }
+            headers["Set-Cookie-Flags-$index"] = flags.joinToString(",").ifBlank { "NO_SECURITY_FLAGS_OBSERVED" }
+        }
         val body = if (method == "GET") (if (status >= 400) connection.errorStream else connection.inputStream)?.use { input ->
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(4096)
