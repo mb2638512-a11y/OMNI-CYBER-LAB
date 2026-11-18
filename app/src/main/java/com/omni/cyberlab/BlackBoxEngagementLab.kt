@@ -297,11 +297,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             localDataEvidence = ""
             status = "LOCAL DATA SECURITY LAB observation saved locally."
         }, enabled = authorized && localDataOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save local data security lab result") }
-        val records = runCatching { JSONArray(localDataJson) }.getOrElse { JSONArray() }
-        val passCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
-        val failCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
-        val reviewCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
-        Text("Saved: ${records.length()} • $passCount PASS • $failCount FAIL • $reviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
+        val localDataRecords = runCatching { JSONArray(localDataJson) }.getOrElse { JSONArray() }
+        val localDataPassCount = (0 until localDataRecords.length()).count { localDataRecords.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val localDataFailCount = (0 until localDataRecords.length()).count { localDataRecords.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val localDataReviewCount = (0 until localDataRecords.length()).count { localDataRecords.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Saved: ${localDataRecords.length()} • $localDataPassCount PASS • $localDataFailCount FAIL • $localDataReviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
         Divider()
         Text("NETWORK SECURITY REVIEW", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Manual review of approved app/API traffic and configuration. No traffic interception, certificate bypass or automatic fuzzing is performed.", style = MaterialTheme.typography.bodySmall)
@@ -323,11 +323,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             networkEvidence = ""
             status = "NETWORK SECURITY REVIEW observation saved locally."
         }, enabled = authorized && networkOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save network security review result") }
-        val records = runCatching { JSONArray(networkJson) }.getOrElse { JSONArray() }
-        val passCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
-        val failCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
-        val reviewCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
-        Text("Saved: ${records.length()} • $passCount PASS • $failCount FAIL • $reviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
+        val networkRecords = runCatching { JSONArray(networkJson) }.getOrElse { JSONArray() }
+        val networkPassCount = (0 until networkRecords.length()).count { networkRecords.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val networkFailCount = (0 until networkRecords.length()).count { networkRecords.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val networkReviewCount = (0 until networkRecords.length()).count { networkRecords.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Saved: ${networkRecords.length()} • $networkPassCount PASS • $networkFailCount FAIL • $networkReviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
