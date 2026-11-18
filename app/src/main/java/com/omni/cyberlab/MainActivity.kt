@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -1156,15 +1157,16 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(7.dp))
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Surface(color = Raised, shape = RoundedCornerShape(12.dp)) {
-                                Icon(Icons.Default.Shield, null, tint = Green,
-                                    modifier = Modifier.padding(10.dp).size(25.dp))
-                            }
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_lucky_patches_logo),
+                                contentDescription = "Lucky Patches logo",
+                                modifier = Modifier.size(44.dp)
+                            )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("LUCKY PATCHES", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
-                                Text(if (settings) "CONTROL CENTER" else "INSTALLED APPLICATIONS",
-                                    color = Grey, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                                Text(if (settings) "CONTROL CENTER" else "APK TOOLKIT • SECURITY LAB",
+                                    color = Grey, fontSize = 9.sp, letterSpacing = 1.1.sp)
                             }
                             IconButton(onClick = { settings = !settings }) {
                                 if (settings) Icon(Icons.Default.ArrowBack, "Back to apps", tint = Green)
@@ -1205,7 +1207,7 @@ class MainActivity : ComponentActivity() {
                                                 modifier = Modifier.fillMaxWidth().height(6.dp),
                                                 color = Green, trackColor = Raised)
                                             Spacer(Modifier.height(9.dp))
-                                            Text("${apps.size} / ${apps.size} apps inventoried",
+                                            Text("${apps.size} apps inventoried • detailed scans on demand",
                                                 color = Grey, fontSize = 12.sp)
                                             Spacer(Modifier.height(9.dp))
                                             Text("CHECKED", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp)
