@@ -91,3 +91,10 @@ On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shi
 Use only on devices, apps, networks and backend environments you own or are explicitly authorized to assess. No payment bypass, credential theft, malware execution, Wi-Fi attack or unauthorized endpoint testing is included.
 
 This repository contains source code. A build is considered successful only when the matching GitHub Actions workflow reports success.
+
+### Blind / black-box penetration-testing engagement workspace
+
+- The per-app workspace includes a blind-testing engagement planner for client-scoped assessments. It records the target package/domain, allowed API hosts, excluded assets/functions, agreed test window/rate limits, operator authorization confirmation, manual coverage and evidence notes.
+- The test matrix covers attack-surface mapping, authentication/session lifecycle, authorization boundaries, non-destructive input validation, deep links/intents, local data exposure, TLS, API entitlement enforcement, official billing sandbox flows, low-volume rate-limit assessment, approved tamper testing and detection/logging review.
+- Exports a JSON engagement plan and evidence index. This is a manual test-planning and recordkeeping tool, not an automated exploit engine; checked items are not proof that a vulnerability exists or that a test passed.
+- Black-box means the tester begins with limited internal knowledge and discovers the attack surface from the client-provided app and public-facing scope. Any stealth/low-noise behavior is constrained to the client-approved test window and assets.
