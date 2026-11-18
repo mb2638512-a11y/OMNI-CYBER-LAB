@@ -109,3 +109,38 @@ object EntitlementAttackSimulator {
         return out
     }
 }
+
+
+/** Owner-side QA checks for ad configuration and license enforcement. No APK patch is applied. */
+object OwnerPatchQaSimulator {
+    fun runSuite(): List<EntitlementSimulationResult> = listOf(
+        EntitlementSimulationResult(
+            "owner_ad_config", "Owner ad-disable configuration test",
+            "Exercise an owner-controlled staging flag that disables ad requests for a test build.",
+            "Unscoped patching can remove ad calls while leaving consent, reward callbacks or app startup in an inconsistent state.",
+            "PASS only when the owner's explicit staging flag disables ad loading, consent remains respected, and rewarded inventory is not granted without verified completion.",
+            true, "Local policy fixture only; no ad SDK call, APK mutation or third-party app modification."
+        ),
+        EntitlementSimulationResult(
+            "ad_reward_spoof", "Rewarded-ad callback spoof resistance",
+            "Invoke a local mock completion callback without a verified reward event.",
+            "Client-trusted callback grants the configured reward.",
+            "Reject the callback unless the owner test adapter supplies a verified reward event and unique event ID.",
+            true, "Local callback model; no real ad network contacted and no reward credited."
+        ),
+        EntitlementSimulationResult(
+            "license_client_flag", "Client-side license flag tampering",
+            "Flip an owner test build's local license-valid flag while offline.",
+            "A client-only license flag may show protected UI as licensed.",
+            "Protected server operations remain denied until the owner backend validates the license and account binding.",
+            true, "Local license-state fixture; no license key generated, altered or applied to another app."
+        ),
+        EntitlementSimulationResult(
+            "license_expiry", "License expiry / clock rollback resistance",
+            "Simulate an expired license and a device-clock rollback in the owner test harness.",
+            "A client-only expiry check may accept stale local state.",
+            "Backend expiry and revocation state remain authoritative; client clock is advisory only.",
+            true, "Deterministic local state model; no external license server contacted."
+        )
+    )
+}
