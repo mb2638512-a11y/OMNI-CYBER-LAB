@@ -22,6 +22,8 @@ object SecureEvidenceVault {
     private const val KEYSTORE = "AndroidKeyStore"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val MAX_BYTES = 10L * 1024L * 1024L
+    private const val MAX_TOTAL_BYTES = 20L * 1024L * 1024L
+    private const val MAX_FILES = 50
     private val magic = byteArrayOf(0x4f, 0x43, 0x4c, 0x31)
 
     private fun scopeId(context: Context, engagementId: String): String =
@@ -56,6 +58,10 @@ object SecureEvidenceVault {
 
     fun importBytes(context: Context, engagementId: String, label: String, bytes: ByteArray): JSONObject {
         require(bytes.isNotEmpty() && bytes.size.toLong() <= MAX_BYTES) { "Evidence file must be between 1 byte and 10 MB." }
+        val existingFiles = directory(context, engagementId).listFiles()?.filter { it.isFile && it.extension == "bin" } ?: emptyList()
+        require(existingFiles.size < MAX_FILES) { "Evidence vault limit is 50 attachments per workspace." }
+        val existingBytes = existingFiles.sumOf { it.length() }
+        require(existingBytes + bytes.size <= MAX_TOTAL_BYTES) { "Evidence vault total size limit is 20 MB per workspace." }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key(context, engagementId))
         val encrypted = cipher.doFinal(bytes)
