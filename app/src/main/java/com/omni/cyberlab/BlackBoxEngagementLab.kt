@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
+import java.net.URI
 import java.util.Date
 
 private val blackBoxChecks = listOf(
@@ -97,8 +98,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         Text("Sends one GET or HEAD request to an exact allowlisted HTTPS hostname. Redirects are not followed; response bodies are hashed but not saved. No fuzzing, credential guessing or state-changing methods.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(endpoint, { endpoint = it; prefs.edit().putString("probe_endpoint", it).apply() }, label = { Text("HTTPS endpoint URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = probeMethod == "GET", onClick = { probeMethod = "GET"; prefs.edit().putString("probe_method", probeMethod).apply() }, label = { Text("GET") })
-            FilterChip(selected = probeMethod == "HEAD", onClick = { probeMethod = "HEAD"; prefs.edit().putString("probe_method", probeMethod).apply() }, label = { Text("HEAD") })
+            FilterChip(selected = probeMethod == "GET", onClick = { probeMethod = "GET"; prefs.edit().putString("probe_method", "GET").apply() }, label = { Text("GET") })
+            FilterChip(selected = probeMethod == "HEAD", onClick = { probeMethod = "HEAD"; prefs.edit().putString("probe_method", "HEAD").apply() }, label = { Text("HEAD") })
         }
         Button(onClick = {
             val allowed = apiHosts.lines().map { it.trim().lowercase() }.filter { it.isNotBlank() }.map { raw -> runCatching { URI(if (raw.contains("://")) raw else "https://$raw").host?.lowercase() }.getOrNull() }.filterNotNull().toSet()
