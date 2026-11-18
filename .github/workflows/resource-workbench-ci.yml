@@ -43,7 +43,7 @@ jobs:
           }
           Write-Host "Integrity pin and report markers validated."
           $android = Get-Content "tools/apktool-workbench/omni-apktool-android.sh" -Raw
-          foreach ($marker in @("apktool b --use-aapt2", "zipalign", "apksigner", "NOT TESTED", "baseline-resources.sha256")) {
+          foreach ($marker in @("apktool d -f -o", "apktool b --use-aapt2", "zipalign", "apksigner", "NOT TESTED", "baseline-resources.sha256", "FULL DECODE PASS")) {
             if ($android -notmatch [regex]::Escape($marker)) { throw "On-device workflow marker missing: $marker" }
           }
           Write-Host "On-device ARM64 workflow markers validated."
