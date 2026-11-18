@@ -213,7 +213,7 @@ This repository contains source code. A build is considered successful only when
 - A separate Go service now verifies one-time product and subscription purchase tokens directly with the Google Play Developer API. It checks exact package/product allowlists, rejects pending one-time purchases, evaluates subscription product/state/expiry, hashes tokens before storage, prevents a token from being rebound to another user and records verification in PostgreSQL.
 - Source: `backend/play-verifier/`. Apply `schema.sql`, configure the required server-side environment variables and deploy behind HTTPS. A dedicated GitHub Actions workflow runs `go test`, `go vet` and `go build`.
 - The service-account JSON and API key are server secrets only. Never place them in OMNI's APK. A trusted app backend must authenticate the user and call this verifier; do not expose a shared verifier API key to an untrusted mobile client.
-- Current scope is token verification and idempotent verification records. It does not yet implement RTDN/Pub/Sub reconciliation, automatic acknowledgement/consumption, or a consumable-currency wallet ledger. Those remain separate production requirements. The service does not mint coins or gold.
+- Current scope includes token verification, idempotent verification records, a server-configured consumable grant ledger and atomic wallet spending. RTDN/Pub/Sub reconciliation and automatic acknowledgement/consumption are not implemented yet and remain production requirements.
 
 ### Full APK resource decode / rebuild companion
 
