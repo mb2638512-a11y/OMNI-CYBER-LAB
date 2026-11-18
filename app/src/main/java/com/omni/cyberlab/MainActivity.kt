@@ -177,7 +177,7 @@ data class AppRow(
 
 private fun buildApkSetManifest(app: AppRow, sources: List<File>, packageManager: PackageManager): String {
     val lines = mutableListOf<String>()
-    lines += "NEXUS CYBER LAB • APK SET BACKUP REPORT"
+    lines += "LUCKY PATCHES • APK SET BACKUP REPORT"
     lines += "Expected package: ${app.pkg}"
     lines += "Expected version: ${app.version}"
     lines += "APK files: ${sources.size}"
@@ -673,7 +673,7 @@ private suspend fun inspectPackageWithShizuku(packageName: String): List<String>
     try {
         if (!Shizuku.pingBinder()) return@withContext listOf("Shizuku service is not running. Start Shizuku and retry.")
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            return@withContext listOf("Shizuku permission has not been granted to NEXUS CYBER LAB.")
+            return@withContext listOf("Shizuku permission has not been granted to LUCKY PATCHES.")
         }
         val process = startShizukuProcess(arrayOf("sh", "-c", "dumpsys package $packageName"))
         try {
@@ -1162,7 +1162,7 @@ class MainActivity : ComponentActivity() {
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("NEXUS CYBER LAB", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("LUCKY PATCHES", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                                 Text(if (settings) "CONTROL CENTER" else "INSTALLED APPLICATIONS",
                                     color = Grey, fontSize = 9.sp, letterSpacing = 1.5.sp)
                             }
@@ -1844,7 +1844,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         context.startActivity(intent)
     }
     fun buildAuditReport(): String = buildString {
-            appendLine("NEXUS CYBER LAB — APP AUDIT")
+            appendLine("LUCKY PATCHES — APP AUDIT")
             appendLine("App: " + app.name)
             appendLine("Package: " + app.pkg)
             appendLine("Version: " + app.version)
@@ -1952,7 +1952,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         val report = buildAuditReport()
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "NEXUS CYBER LAB audit — " + app.name)
+            putExtra(Intent.EXTRA_SUBJECT, "LUCKY PATCHES audit — " + app.name)
             putExtra(Intent.EXTRA_TEXT, report)
         }
         context.startActivity(Intent.createChooser(send, "Export audit report"))
@@ -2300,7 +2300,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }, enabled = installed && shizukuReady && !logCaptureRunning, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                                     Text(if (logCaptureRunning) "Capturing…" else "Capture app log snapshot")
                                 }
-                                if (!shizukuReady) Text("Start Shizuku and grant NEXUS CYBER LAB permission. Launch the target app and reproduce the action before capturing.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                if (!shizukuReady) Text("Start Shizuku and grant LUCKY PATCHES permission. Launch the target app and reproduce the action before capturing.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                                 if (runtimeLogReport.isNotBlank()) Text(runtimeLogReport, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 9.dp))
                                 Text("A limited, user-triggered snapshot. Sensitive values are redacted where recognized; review before sharing logs.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
@@ -2316,7 +2316,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                                     Text(if (shizukuRunning) "Collecting…" else "Run Shizuku package diagnostics")
                                 }
-                                if (!shizukuReady) Text("Start Shizuku, authorize NEXUS CYBER LAB, then return and refresh the bridge status on the home screen.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                                if (!shizukuReady) Text("Start Shizuku, authorize LUCKY PATCHES, then return and refresh the bridge status on the home screen.", color = Orange, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                                 if (shizukuReport.isNotBlank()) Text(shizukuReport, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 9.dp))
                                 Text("Read-only dumpsys output. This does not access another app's private files, change settings or execute code inside the target app.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
@@ -2326,7 +2326,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                         val ops = context.getSystemService(AppOpsManager::class.java)
                                         val mode = ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
                                         if (mode != AppOpsManager.MODE_ALLOWED) {
-                                            storageResult = "Android Usage Access is required. Enable NEXUS CYBER LAB, return here and measure again."
+                                            storageResult = "Android Usage Access is required. Enable LUCKY PATCHES, return here and measure again."
                                             context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                         } else {
                                             installScope.launch {
@@ -2779,7 +2779,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
         }
         Button(onClick = {
             val json = org.json.JSONObject().apply {
-                put("reportType", "NEXUS CYBER LAB security findings")
+                put("reportType", "LUCKY PATCHES security findings")
                 put("packageName", app.pkg)
                 put("appName", app.name)
                 put("version", app.version)
@@ -2797,7 +2797,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
             }.toString(2)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
-                putExtra(Intent.EXTRA_SUBJECT, "NEXUS CYBER LAB findings • " + app.name)
+                putExtra(Intent.EXTRA_SUBJECT, "LUCKY PATCHES findings • " + app.name)
                 putExtra(Intent.EXTRA_TEXT, json)
             }
             context.startActivity(Intent.createChooser(send, "Export findings JSON"))
@@ -2878,7 +2878,7 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
             while (history.length() > 10) history.remove(0)
             historyCount = history.length()
             val body = suite.joinToString("\n")
-            report = "NEXUS CYBER LAB • SECURITY TEST RUN\nProfile: " + selectedProfile + "\nApp: ${app.name} (${app.pkg})\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\n\n" + comparison + "\n\n" + body
+            report = "LUCKY PATCHES • SECURITY TEST RUN\nProfile: " + selectedProfile + "\nApp: ${app.name} (${app.pkg})\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\n\n" + comparison + "\n\n" + body
             ranAt = stamp
             prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp)
                 .putString(historyKey, history.toString()).putString("comparison_" + app.pkg, comparison).apply()
@@ -2943,21 +2943,21 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
             Button(onClick = {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "NEXUS CYBER LAB security test • " + app.name)
+                    putExtra(Intent.EXTRA_SUBJECT, "LUCKY PATCHES security test • " + app.name)
                     putExtra(Intent.EXTRA_TEXT, report)
                 }
                 context.startActivity(Intent.createChooser(send, "Export security test report"))
             }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Export test run report") }
             OutlinedButton(onClick = {
                 val historyJson = try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
-                val payload = org.json.JSONObject().put("reportType", "NEXUS CYBER LAB regression history")
+                val payload = org.json.JSONObject().put("reportType", "LUCKY PATCHES regression history")
                     .put("packageName", app.pkg).put("appName", app.name).put("latestComparison", comparison)
                     .put("snapshots", historyJson)
                     .put("limitations", "Static rule snapshots only. A signal no longer matching is not proof of remediation; results are not a vulnerability verdict.")
                     .toString(2)
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "application/json"
-                    putExtra(Intent.EXTRA_SUBJECT, "NEXUS CYBER LAB regression history • " + app.name)
+                    putExtra(Intent.EXTRA_SUBJECT, "LUCKY PATCHES regression history • " + app.name)
                     putExtra(Intent.EXTRA_TEXT, payload)
                 }
                 context.startActivity(Intent.createChooser(send, "Export regression history JSON"))
