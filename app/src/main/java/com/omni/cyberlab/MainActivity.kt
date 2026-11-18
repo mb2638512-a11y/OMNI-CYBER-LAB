@@ -1632,6 +1632,20 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             val billingMarked = checklistPrefs.getStringSet("billing:" + app.pkg, emptySet()) ?: emptySet()
             appendLine("Billing sandbox checklist: " + billingMarked.size + " items marked complete")
             billingMarked.sorted().forEach { appendLine("  [X] " + it) }
+            val runtimePrefs = context.getSharedPreferences("runtime_test_sessions", Context.MODE_PRIVATE)
+            val runtimeChecks = listOf("Launch and normal navigation", "Login, logout and session expiry", "Permission prompts and denial handling", "Background / foreground transition", "Airplane mode, reconnect and retry", "Invalid input and boundary handling", "Sensitive data not exposed in UI or logs", "Deep links and exported entry points", "Crash / ANR observation after test actions", "Purchase flow in official sandbox only")
+            val runtimeKey = "checks_" + app.pkg
+            val runtimeSaved = runtimePrefs.getString(runtimeKey, "") ?: ""
+            val runtimeNotes = runtimePrefs.getString("notes_" + app.pkg, "") ?: ""
+            val runtimeStarted = runtimePrefs.getLong("started_" + app.pkg, 0L)
+            appendLine()
+            appendLine("GUIDED RUNTIME TEST SESSION")
+            appendLine("Started: " + if (runtimeStarted == 0L) "Not started" else java.text.DateFormat.getDateTimeInstance().format(java.util.Date(runtimeStarted)))
+            appendLine("Steps marked: " + runtimeChecks.indices.count { runtimeSaved.getOrNull(it) == '1' } + "/" + runtimeChecks.size)
+            runtimeChecks.forEachIndexed { index, label -> appendLine("  [" + (if (runtimeSaved.getOrNull(index) == '1') "X" else " ") + "] " + label) }
+            appendLine("Observations:")
+            appendLine(if (runtimeNotes.isBlank()) "- No notes recorded" else runtimeNotes)
+            appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
             if (runtimeLogReport.isNotBlank()) { appendLine(); appendLine("RUNTIME LOG TRIAGE SNAPSHOT"); appendLine(runtimeLogReport) }
             if (shizukuReport.isNotBlank()) { appendLine(); appendLine("SHIZUKU DIAGNOSTIC SNAPSHOT"); appendLine(shizukuReport) }
