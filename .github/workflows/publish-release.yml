@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: lucky-patches-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -35,10 +39,8 @@ jobs:
           body: |
             LUCKY PATCHES v0.13.0 — Android debug APK.
 
-            Includes installed-app and APK inventory, static security orchestration, Shizuku read-only diagnostics, 12 adversarial purchase and virtual-economy QA scenarios, evidence reports, strict Play verifier request parsing, and expanded Android regression tests.
+            Adds an owner-authorized ad-config APK patcher for supported text flags under assets/ and res/raw/, with unsigned APK rebuild, stale-signature removal, SHA-256 and before/after ZIP diff. It also includes installed-app inventory, APK inspection, security QA, Shizuku read-only diagnostics, purchase/license simulations and evidence reports.
 
-            Full on-device Apktool decode/rebuild is available through the Termux ARM64 companion. It decodes DEX into Smali and rebuilds Smali into DEX alongside resources and manifest. Output is unsigned until signed with the owner's keystore. Use only APKs you own or are explicitly authorized to test.
-
-            Live third-party payment, VIP, license or ad bypass is not included. The purchase-security labs support local exploit simulation and authorized staging/test-account validation. Physical-device install/runtime validation remains a separate manual test.
+            The ad-config patch changes only exact owner-controlled configuration flags. The app must actually read those flags for its ad behavior to change. It does not strip third-party ad SDK code or bypass another developer's monetization. Full Apktool decode/rebuild remains available through the Termux ARM64 companion. Sign with your own keystore and validate on a controlled device; physical-device runtime validation is not claimed.
           files: app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
