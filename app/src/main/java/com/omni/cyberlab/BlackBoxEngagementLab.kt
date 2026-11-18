@@ -50,6 +50,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var engagementName by remember(packageName) { mutableStateOf(prefs.getString("engagement_name", "Mobile application security assessment") ?: "Mobile application security assessment") }
     var engagementStatus by remember(packageName) { mutableStateOf(prefs.getString("engagement_status", "PLANNED") ?: "PLANNED") }
     var engagementReference by remember(packageName) { mutableStateOf(prefs.getString("engagement_reference", "") ?: "") }
+    var engagementSnapshotsJson by remember(packageName) { mutableStateOf(prefs.getString("engagement_snapshots", "[]") ?: "[]") }
     var billingCase by remember(packageName) { mutableIntStateOf(0) }
     var billingOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
     var billingEvidence by remember(packageName) { mutableStateOf("") }
@@ -118,6 +119,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("engagementName", engagementName)
                 .put("engagementStatus", engagementStatus)
                 .put("engagementReference", engagementReference)
+                .put("engagementSnapshots", JSONArray(engagementSnapshotsJson))
                 .put("billingLifecycleTests", JSONArray(billingJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
@@ -135,6 +137,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                     appendLine("Engagement: $engagementName")
                     appendLine("Reference: $engagementReference")
                     appendLine("Status: $engagementStatus")
+                    appendLine("Saved engagement checkpoints: ${JSONArray(engagementSnapshotsJson).length()}")
                     appendLine("Target: $target")
                     appendLine("Package: $packageName")
                     appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
@@ -219,6 +222,65 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         OutlinedTextField(engagementName, { engagementName = it; prefs.edit().putString("engagement_name", it).apply() }, label = { Text("Engagement title") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(engagementReference, { engagementReference = it; prefs.edit().putString("engagement_reference", it).apply() }, label = { Text("PO / engagement reference (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("PLANNED", "ACTIVE", "PAUSED", "COMPLETED", "CLOSED").forEach { value -> FilterChip(selected = engagementStatus == value, onClick = { engagementStatus = value; prefs.edit().putString("engagement_status", value).apply() }, label = { Text(value) }) } }
+        OutlinedButton(onClick = {
+            if (!authorized) {
+                status = "Confirm client authorization before saving an engagement checkpoint."
+            } else {
+                val snapshot = JSONObject()
+                    .put("id", "ENG-${System.currentTimeMillis()}")
+                    .put("savedAt", DateFormat.getDateTimeInstance().format(Date()))
+                    .put("clientName", clientName)
+                    .put("engagementName", engagementName)
+                    .put("engagementReference", engagementReference)
+                    .put("engagementStatus", engagementStatus)
+                    .put("target", target)
+                    .put("packageName", packageName)
+                    .put("allowedApiHosts", apiHosts)
+                    .put("excludedAssets", exclusions)
+                    .put("testWindow", testWindow)
+                    .put("authorizationConfirmed", authorized)
+                    .put("coverageCompleted", checked.size)
+                    .put("coverageTotal", blackBoxChecks.size)
+                    .put("findingCount", JSONArray(findingsJson).length())
+                    .put("apiAuthorizationRecords", JSONArray(matrixJson).length())
+                    .put("sessionSecurityRecords", JSONArray(sessionRecordsJson).length())
+                    .put("localDataRecords", JSONArray(localDataJson).length())
+                    .put("networkSecurityRecords", JSONArray(networkJson).length())
+                    .put("billingRecords", JSONArray(billingJson).length())
+                    .put("endpointProbeRecords", JSONArray(probeHistoryJson).length())
+                    .put("operatorNotes", notes)
+                    .put("findings", JSONArray(findingsJson))
+                    .put("authorizationMatrix", JSONArray(matrixJson))
+                    .put("sessionSecurityTests", JSONArray(sessionRecordsJson))
+                    .put("localDataSecurityTests", JSONArray(localDataJson))
+                    .put("networkSecurityTests", JSONArray(networkJson))
+                    .put("billingLifecycleTests", JSONArray(billingJson))
+                    .put("endpointProbeHistory", JSONArray(probeHistoryJson))
+                    .put("completedChecks", JSONArray(checked.sorted().map { blackBoxChecks[it] }))
+                val history = runCatching { JSONArray(engagementSnapshotsJson) }.getOrElse { JSONArray() }
+                history.put(snapshot)
+                val bounded = JSONArray()
+                for (index in (history.length() - 20).coerceAtLeast(0) until history.length()) bounded.put(history.getJSONObject(index))
+                engagementSnapshotsJson = bounded.toString()
+                prefs.edit().putString("engagement_snapshots", engagementSnapshotsJson).apply()
+                status = "Engagement checkpoint saved. Existing records remain unchanged."
+            }
+        }, enabled = authorized, modifier = Modifier.fillMaxWidth()) { Text("Save engagement checkpoint") }
+        val engagementHistory = runCatching { JSONArray(engagementSnapshotsJson) }.getOrElse { JSONArray() }
+        Text("ENGAGEMENT CHECKPOINT HISTORY • ${engagementHistory.length()} / 20", style = MaterialTheme.typography.labelLarge)
+        if (engagementHistory.length() > 0) {
+            for (index in (engagementHistory.length() - 3).coerceAtLeast(0) until engagementHistory.length()) {
+                val checkpoint = engagementHistory.optJSONObject(index) ?: continue
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(checkpoint.optString("engagementName"), style = MaterialTheme.typography.bodyMedium)
+                        Text("${checkpoint.optString("clientName")} • ${checkpoint.optString("engagementReference")} • ${checkpoint.optString("engagementStatus")}", style = MaterialTheme.typography.labelSmall)
+                        Text("Saved: ${checkpoint.optString("savedAt")} • Coverage: ${checkpoint.optInt("coverageCompleted")}/${checkpoint.optInt("coverageTotal")} • Findings: ${checkpoint.optInt("findingCount")}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            Text("Checkpoints are immutable snapshots of the current local workspace, not separate isolated engagement databases. Latest 20 are retained on this device.", style = MaterialTheme.typography.labelSmall)
+        } else Text("No saved engagement checkpoints yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
         Text("BLIND / BLACK-BOX PENETRATION TEST", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Start with only the client-provided app and public-facing information. Keep the test low-noise where agreed, record evidence, and do not assume hidden assets are in scope.", style = MaterialTheme.typography.bodySmall)
