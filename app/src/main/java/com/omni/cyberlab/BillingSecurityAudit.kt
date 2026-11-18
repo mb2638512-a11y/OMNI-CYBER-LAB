@@ -40,7 +40,7 @@ private fun runBillingStaticAudit(apk: File): List<BillingAuditFinding> {
                 dexCount++
                 val bytes = zip.getInputStream(entry).use { it.readBytes() }
                 val printable = bytes.filter { (it.toInt() and 0xff) in 32..126 || it == 10.toByte() || it == 13.toByte() }.toByteArray()
-                dexText.append(printable.toString(Charsets.UTF_8)).append("\\n")
+                dexText.append(printable.toString(Charsets.UTF_8)).append("\n")
             }
         }
     }
