@@ -940,54 +940,73 @@ class MainActivity : ComponentActivity() {
     } catch (_: Exception) { null }
 
     private fun readApps(): List<AppRow> {
+        // Fast first paint: do not parse manifests, permissions, signatures or APK ZIPs for every installed app.
+        val pm = packageManager
+        return pm.getInstalledPackages(0).mapNotNull { p ->
+            try {
+                val ai = p.applicationInfo ?: return@mapNotNull null
+                val installer = if (Build.VERSION.SDK_INT >= 30) {
+                    try { pm.getInstallSourceInfo(p.packageName).installingPackageName ?: "Unknown" }
+                    catch (_: Exception) { "Unknown" }
+                } else "Not available on Android version"
+                AppRow(
+                    pm.getApplicationLabel(ai).toString(), p.packageName, p.versionName ?: "Unknown",
+                    iconBitmap(pm.getApplicationIcon(ai)), emptyList(), 0,
+                    ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0, "Tap app to inspect",
+                    ai.flags and ApplicationInfo.FLAG_SYSTEM != 0, ai.targetSdkVersion,
+                    installer, emptyList(), emptyList(), emptyList(), emptyList(),
+                    ai.sourceDir, (listOf(ai.sourceDir) + (ai.splitSourceDirs?.toList() ?: emptyList())).distinct()
+                )
+            } catch (_: Exception) { null }
+        }.sortedBy { it.name.lowercase() }
+    }
+
+    private fun readDetailedApp(packageName: String): AppRow? {
         val pm = packageManager
         val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_ACTIVITIES or
             PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
             PackageManager.GET_PROVIDERS or
             (if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0)
-        return pm.getInstalledPackages(flags).mapNotNull { p ->
-            try {
-                val ai = p.applicationInfo ?: return@mapNotNull null
-                val perms = p.requestedPermissions?.toList() ?: emptyList()
-                val grantedPermissions = p.requestedPermissions?.mapIndexedNotNull { index, permission ->
-                    val permissionFlags = p.requestedPermissionsFlags?.getOrNull(index) ?: 0
-                    if (permissionFlags and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0) permission else null
-                } ?: emptyList()
-                val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-                val componentDetails = buildList {
-                    p.activities?.filter { it.exported }?.forEach { add("ACTIVITY • ${it.name} • permission=${it.permission ?: "none"}") }
-                    p.services?.filter { it.exported }?.forEach { add("SERVICE • ${it.name} • permission=${it.permission ?: "none"}") }
-                    p.receivers?.filter { it.exported }?.forEach { add("RECEIVER • ${it.name} • permission=${it.permission ?: "none"}") }
-                    p.providers?.filter { it.exported }?.forEach { add("PROVIDER • ${it.name} • permission=${it.readPermission ?: "none"}/${it.writePermission ?: "none"}") }
-                }
-                val exported = componentDetails.size
-                val cert = if (Build.VERSION.SDK_INT >= 28)
-                    p.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else null
-                val signer = cert?.let { bytes ->
-                    MessageDigest.getInstance("SHA-256").digest(bytes)
-                        .joinToString(":") { "%02X".format(it) }
-                } ?: "Unavailable"
-                val findings = buildList {
-                    if (debug) add("Debuggable build flag is enabled")
-                    if (ai.flags and ApplicationInfo.FLAG_ALLOW_BACKUP != 0) add("App backup is enabled; review sensitive-data backup rules")
-                    if (Build.VERSION.SDK_INT >= 23 && (ai.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC != 0)) add("Cleartext network traffic is allowed by manifest")
-                    if (perms.any { it.contains("SMS") || it.contains("CONTACTS") ||
-                            it.contains("LOCATION") || it.contains("CAMERA") ||
-                            it.contains("RECORD_AUDIO") }) add("Sensitive permissions requested")
-                    if (exported > 0) add("$exported exported components need access-control review")
-                    if (signer == "Unavailable") add("Signing fingerprint unavailable")
-                }
-                val installer = if (Build.VERSION.SDK_INT >= 30) {
-                    try { pm.getInstallSourceInfo(p.packageName).installingPackageName ?: "Unknown" }
-                    catch (_: Exception) { "Unknown" }
-                } else "Not available on Android version"
-                AppRow(pm.getApplicationLabel(ai).toString(), p.packageName,
-                    p.versionName ?: "Unknown", iconBitmap(pm.getApplicationIcon(ai)),
-                    perms, exported, debug, signer,
-                    ai.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                    ai.targetSdkVersion, installer, findings, grantedPermissions, componentDetails, emptyList(), ai.sourceDir, (listOf(ai.sourceDir) + (ai.splitSourceDirs?.toList() ?: emptyList())).distinct())
-            } catch (_: Exception) { null }
-        }.sortedBy { it.name.lowercase() }
+        return try {
+            val p = pm.getPackageInfo(packageName, flags)
+            val ai = p.applicationInfo ?: return null
+            val perms = p.requestedPermissions?.toList() ?: emptyList()
+            val grantedPermissions = p.requestedPermissions?.mapIndexedNotNull { index, permission ->
+                val permissionFlags = p.requestedPermissionsFlags?.getOrNull(index) ?: 0
+                if (permissionFlags and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0) permission else null
+            } ?: emptyList()
+            val debug = ai.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+            val componentDetails = buildList {
+                p.activities?.filter { it.exported }?.forEach { add("ACTIVITY • ${it.name} • permission=${it.permission ?: "none"}") }
+                p.services?.filter { it.exported }?.forEach { add("SERVICE • ${it.name} • permission=${it.permission ?: "none"}") }
+                p.receivers?.filter { it.exported }?.forEach { add("RECEIVER • ${it.name} • permission=${it.permission ?: "none"}") }
+                p.providers?.filter { it.exported }?.forEach { add("PROVIDER • ${it.name} • permission=${it.readPermission ?: "none"}/${it.writePermission ?: "none"}") }
+            }
+            val cert = if (Build.VERSION.SDK_INT >= 28)
+                p.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray() else null
+            val signer = cert?.let { bytes ->
+                MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(":") { "%02X".format(it) }
+            } ?: "Unavailable"
+            val findings = buildList {
+                if (debug) add("Debuggable build flag is enabled")
+                if (ai.flags and ApplicationInfo.FLAG_ALLOW_BACKUP != 0) add("App backup is enabled; review sensitive-data backup rules")
+                if (Build.VERSION.SDK_INT >= 23 && (ai.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC != 0)) add("Cleartext network traffic is allowed by manifest")
+                if (perms.any { it.contains("SMS") || it.contains("CONTACTS") || it.contains("LOCATION") || it.contains("CAMERA") || it.contains("RECORD_AUDIO") }) add("Sensitive permissions requested")
+                if (componentDetails.isNotEmpty()) add("${componentDetails.size} exported components need access-control review")
+                if (signer == "Unavailable") add("Signing fingerprint unavailable")
+            }
+            val installer = if (Build.VERSION.SDK_INT >= 30) {
+                try { pm.getInstallSourceInfo(p.packageName).installingPackageName ?: "Unknown" }
+                catch (_: Exception) { "Unknown" }
+            } else "Not available on Android version"
+            AppRow(
+                pm.getApplicationLabel(ai).toString(), p.packageName, p.versionName ?: "Unknown",
+                iconBitmap(pm.getApplicationIcon(ai)), perms, componentDetails.size, debug, signer,
+                ai.flags and ApplicationInfo.FLAG_SYSTEM != 0, ai.targetSdkVersion, installer,
+                findings, grantedPermissions, componentDetails, inspectApkArchive(ai.sourceDir),
+                ai.sourceDir, (listOf(ai.sourceDir) + (ai.splitSourceDirs?.toList() ?: emptyList())).distinct()
+            )
+        } catch (_: Exception) { null }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1426,10 +1445,13 @@ class MainActivity : ComponentActivity() {
                                     ) {
                                         items(shown, key = { it.pkg }) { app ->
                                             AppItem(app) {
-                                                selected = app.copy(archiveInventory = listOf("Loading detailed APK archive inspection…"))
+                                                selected = app.copy(archiveInventory = listOf("Loading detailed app and APK inspection…"))
                                                 scope.launch {
-                                                    val archive = withContext(Dispatchers.IO) { inspectApkArchive(app.apkPath) }
-                                                    selected = app.copy(archiveInventory = archive)
+                                                    val detailed = withContext(Dispatchers.IO) { readDetailedApp(app.pkg) }
+                                                    selected = detailed ?: app.copy(
+                                                        findings = listOf("Detailed package inspection failed; retry after refreshing the inventory."),
+                                                        archiveInventory = emptyList()
+                                                    )
                                                 }
                                             }
                                         }
