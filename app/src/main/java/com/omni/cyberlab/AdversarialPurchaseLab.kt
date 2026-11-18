@@ -40,6 +40,7 @@ private val purchaseAdversarialCases = listOf(
 @Composable
 fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier) {
     var results by remember(targetPackage) { mutableStateOf<Map<Int, String>>(emptyMap()) }
+    var exploitResults by remember(targetPackage) { mutableStateOf<List<EntitlementSimulationResult>>(emptyList()) }
     var selected by remember(targetPackage) { mutableStateOf("ALL") }
     val green = Color(0xFF55E6A5)
     val muted = Color(0xFF9AA6B2)
@@ -66,6 +67,26 @@ fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier)
                     OutlinedButton(onClick = { results = emptyMap() }, modifier = Modifier.weight(1f)) { Text("Reset", fontSize = 9.sp) }
                 }
                 Text("SIMULATED ${results.size} / ${visible.size} • NOT A LIVE TARGET TEST", color = green, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                OutlinedButton(onClick = { exploitResults = EntitlementAttackSimulator.runSuite() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Run local attacker exploit + hardened-control suite", fontSize = 9.sp)
+                }
+                if (exploitResults.isNotEmpty()) {
+                    val vulnerableCount = exploitResults.count { it.vulnerable }
+                    Text("LOCAL DEMO RESULTS: \${vulnerableCount} vulnerable control(s) detected across \${exploitResults.size} scenarios • no target app contacted", color = amber, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    exploitResults.forEach { result ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B28))) {
+                            Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(result.title, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("ATTACK: \${result.attackerTechnique}", color = muted, fontSize = 9.sp)
+                                Text("VULNERABLE DEMO: \${result.vulnerableOutcome}", color = if (result.vulnerable) Color(0xFFFF6878) else amber, fontSize = 9.sp)
+                                Text("HARDENED CONTROL: \${result.hardenedOutcome}", color = green, fontSize = 9.sp)
+                                Text("EVIDENCE: \${result.evidence}", color = muted, fontSize = 8.sp)
+                            }
+                        }
+                    }
+                    Text("These are deterministic local model results, not findings against \${targetPackage}. Repeat equivalent cases against your own staging app/backend to establish real evidence.", color = amber, fontSize = 9.sp)
+                }
+
                 visible.forEach { (index, test) ->
                     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B28))) {
                         Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
