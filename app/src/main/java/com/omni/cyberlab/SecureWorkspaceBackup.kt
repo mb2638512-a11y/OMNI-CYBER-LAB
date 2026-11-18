@@ -27,7 +27,7 @@ import javax.crypto.spec.SecretKeySpec
 object SecureWorkspaceBackup {
     private val magic = byteArrayOf(0x4f, 0x43, 0x42, 0x31)
     private const val ITERATIONS = 250_000
-    private const val MAX_BACKUP = 20 * 1024 * 1024
+    private const val MAX_BACKUP = 32 * 1024 * 1024
 
     private fun derive(passphrase: CharArray, salt: ByteArray): ByteArray {
         val spec = PBEKeySpec(passphrase, salt, ITERATIONS, 256)
