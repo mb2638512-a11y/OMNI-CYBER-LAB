@@ -20,7 +20,7 @@ The tool decodes AndroidManifest.xml, resources.arsc, layouts, values, drawables
 Edit decoded res/ and assets/ content, then run:
 
 ~~~powershell
-.\Invoke-OmniApkResourceWorkbench.ps1 -Action Build -ApkPath "unused-for-build" -WorkDir "C:\OMNI\my-owner-app-work" -OutputApk "C:\OMNI\my-owner-app-rebuilt-unsigned.apk" -ConfirmAuthorized
+.\Invoke-OmniApkResourceWorkbench.ps1 -Action Build -WorkDir "C:\OMNI\my-owner-app-work" -OutputApk "C:\OMNI\my-owner-app-rebuilt-unsigned.apk" -ConfirmAuthorized
 ~~~
 
 The build produces an unsigned APK and two evidence files beside it:
