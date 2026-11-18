@@ -59,7 +59,7 @@ object SecureWorkspaceBackup {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
         val values = JSONObject()
         prefs.all.forEach { (key, value) ->
-            if (key != "secure_evidence_index") when (value) {
+            if (key != "secure_evidence_index" && key != "authorized") when (value) {
                 is String -> values.put(key, value)
                 is Boolean -> values.put(key, value)
                 is Int -> values.put(key, value)
@@ -94,6 +94,6 @@ object SecureWorkspaceBackup {
                 is org.json.JSONArray -> editor.putStringSet(key, (0 until value.length()).map { value.optString(it) }.toSet())
             }
         }
-        editor.putString("secure_evidence_index", "[]").apply()
+        editor.putBoolean("authorized", false).putString("secure_evidence_index", "[]").apply()
     }
 }
