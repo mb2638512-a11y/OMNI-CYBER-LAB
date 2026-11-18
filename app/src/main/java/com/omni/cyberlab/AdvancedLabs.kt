@@ -90,16 +90,32 @@ private fun buildPatchedApk(source: File, entryName: String, replacement: String
 
 private data class OwnerAdPatchResult(val changedEntries: List<String>, val changedFlags: Int)
 
+internal fun rewriteOwnerAdConfigText(input: String): Pair<String, Int> {
+    val key = "(?:ads_enabled|ad_enabled|show_ads|show_ad|enable_ads|enable_ad|is_ads_enabled|adsEnabled|adEnabled|showAds|enableAds|isAdsEnabled)"
+    val patterns = listOf(
+        Regex("""(["']$key["']\s*:\s*)(true|1)(\b)""", RegexOption.IGNORE_CASE),
+        Regex("""(<bool\s+name=["']$key["']\s*>\s*)true(\s*</bool>)""", RegexOption.IGNORE_CASE),
+        Regex("""(^\s*$key\s*=\s*)true(\s*(?:#.*)?$)""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
+    )
+    var count = 0
+    var output = input
+    patterns.forEachIndexed { index, pattern ->
+        output = pattern.replace(output) { match ->
+            count++
+            when (index) {
+                0 -> match.groupValues[1] + if (match.groupValues[2] == "1") "0" else "false" + match.groupValues[3]
+                1 -> match.groupValues[1] + "false" + match.groupValues[2]
+                else -> match.groupValues[1] + "false" + match.groupValues[2]
+            }
+        }
+    }
+    return output to count
+}
+
 private fun applyOwnerAdConfigPatch(source: File, output: File): OwnerAdPatchResult {
     require(source.isFile && source.length() in 1..(100L * 1024L * 1024L)) {
         "Select an owner-authorized APK up to 100 MB."
     }
-    val key = "(?:ads_enabled|ad_enabled|show_ads|show_ad|enable_ads|enable_ad|is_ads_enabled|adsEnabled|adEnabled|showAds|enableAds|isAdsEnabled)"
-    val patterns = listOf(
-        Regex("""(["']$key["']\\s*:\\s*)(true|1)(\\b)""", RegexOption.IGNORE_CASE),
-        Regex("""(<bool\\s+name=["']$key["']\\s*>\\s*)true(\\s*</bool>)""", RegexOption.IGNORE_CASE),
-        Regex("""(^\\s*$key\\s*=\\s*)true(\\s*(?:#.*)?$)""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
-    )
     val changed = mutableListOf<String>()
     var changedFlags = 0
     ZipFile(source).use { zip ->
@@ -123,23 +139,9 @@ private fun applyOwnerAdConfigPatch(source: File, output: File): OwnerAdPatchRes
                 val original = zip.getInputStream(entry).use { it.readBytes() }
                 var bytes = original
                 if (candidate && original.none { it == 0.toByte() }) {
-                    var text = original.toString(Charsets.UTF_8)
-                    var localCount = 0
-                    patterns.forEachIndexed { index, pattern ->
-                        val matches = pattern.findAll(text).toList()
-                        if (matches.isNotEmpty()) {
-                            text = pattern.replace(text) { match ->
-                                localCount++
-                                when (index) {
-                                    0 -> match.groupValues[1] + "false" + match.groupValues[3]
-                                    1 -> match.groupValues[1] + "false" + match.groupValues[2]
-                                    else -> match.groupValues[1] + "false" + match.groupValues[2]
-                                }
-                            }
-                        }
-                    }
+                    val (rewritten, localCount) = rewriteOwnerAdConfigText(original.toString(Charsets.UTF_8))
                     if (localCount > 0) {
-                        bytes = text.toByteArray(Charsets.UTF_8)
+                        bytes = rewritten.toByteArray(Charsets.UTF_8)
                         changed += entry.name
                         changedFlags += localCount
                     }
