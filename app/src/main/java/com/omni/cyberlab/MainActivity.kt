@@ -1711,6 +1711,11 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                 appendLine(finding + " • " + if (reviewedFindings.contains(title)) "MANUALLY REVIEWED" else "AWAITING REVIEW")
             }
             appendLine("Review markers are user-managed workflow labels and do not mean an issue is fixed or remediated.")
+            appendLine("REMEDIATION WORKFLOW (user-managed, not verified):")
+            val remediationJson = try { org.json.JSONObject(runtimePrefs.getString("remediation_" + app.pkg, "{}") ?: "{}") } catch (_: Exception) { org.json.JSONObject() }
+            if (remediationJson.length() == 0) appendLine("- No remediation status recorded")
+            else remediationJson.keys().forEach { key -> appendLine("- " + key + ": " + remediationJson.optString(key)) }
+            appendLine("READY TO RETEST is not the same as fixed; rerun checks and independently verify the change.")
             if (runtimeEvidence.isNotBlank()) { appendLine(); appendLine("ATTACHED DEVICE DIAGNOSTIC EVIDENCE"); appendLine(runtimeEvidence) }
             if (runtimeLogReport.isNotBlank()) { appendLine(); appendLine("RUNTIME LOG TRIAGE SNAPSHOT"); appendLine(runtimeLogReport) }
             if (shizukuReport.isNotBlank()) { appendLine(); appendLine("SHIZUKU DIAGNOSTIC SNAPSHOT"); appendLine(shizukuReport) }
