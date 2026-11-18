@@ -87,6 +87,77 @@ private fun buildPatchedApk(source: File, entryName: String, replacement: String
     return output
 }
 
+
+private data class OwnerAdPatchResult(val changedEntries: List<String>, val changedFlags: Int)
+
+private fun applyOwnerAdConfigPatch(source: File, output: File): OwnerAdPatchResult {
+    require(source.isFile && source.length() in 1..(100L * 1024L * 1024L)) {
+        "Select an owner-authorized APK up to 100 MB."
+    }
+    val key = "(?:ads_enabled|ad_enabled|show_ads|show_ad|enable_ads|enable_ad|is_ads_enabled|adsEnabled|adEnabled|showAds|enableAds|isAdsEnabled)"
+    val patterns = listOf(
+        Regex("""(["']$key["']\\s*:\\s*)(true|1)(\\b)""", RegexOption.IGNORE_CASE),
+        Regex("""(<bool\\s+name=["']$key["']\\s*>\\s*)true(\\s*</bool>)""", RegexOption.IGNORE_CASE),
+        Regex("""(^\\s*$key\\s*=\\s*)true(\\s*(?:#.*)?$)""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
+    )
+    val changed = mutableListOf<String>()
+    var changedFlags = 0
+    ZipFile(source).use { zip ->
+        ZipOutputStream(output.outputStream().buffered()).use { out ->
+            val entries = zip.entries()
+            var count = 0
+            var total = 0L
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                require(++count <= 8000) { "APK exceeds the 8,000-entry limit." }
+                if (entry.isDirectory) continue
+                if (entry.name.startsWith("META-INF/") &&
+                    listOf(".RSA", ".DSA", ".EC", ".SF", "MANIFEST.MF").any { entry.name.endsWith(it, true) }
+                ) continue
+                require(entry.size in 0..(30L * 1024L * 1024L)) { "An APK entry exceeds the 30 MB limit." }
+                val candidate = (entry.name.startsWith("assets/") || entry.name.startsWith("res/raw/")) &&
+                    entry.size in 1..262144L &&
+                    !entry.name.endsWith(".png", true) && !entry.name.endsWith(".jpg", true) &&
+                    !entry.name.endsWith(".webp", true) && !entry.name.endsWith(".so", true) &&
+                    !entry.name.endsWith(".dex", true)
+                val original = zip.getInputStream(entry).use { it.readBytes() }
+                var bytes = original
+                if (candidate && original.none { it == 0.toByte() }) {
+                    var text = original.toString(Charsets.UTF_8)
+                    var localCount = 0
+                    patterns.forEachIndexed { index, pattern ->
+                        val matches = pattern.findAll(text).toList()
+                        if (matches.isNotEmpty()) {
+                            text = pattern.replace(text) { match ->
+                                localCount++
+                                when (index) {
+                                    0 -> match.groupValues[1] + "false" + match.groupValues[3]
+                                    1 -> match.groupValues[1] + "false" + match.groupValues[2]
+                                    else -> match.groupValues[1] + "false" + match.groupValues[2]
+                                }
+                            }
+                        }
+                    }
+                    if (localCount > 0) {
+                        bytes = text.toByteArray(Charsets.UTF_8)
+                        changed += entry.name
+                        changedFlags += localCount
+                    }
+                }
+                total += bytes.size
+                require(total <= 150L * 1024L * 1024L) { "Expanded APK exceeds the 150 MB limit." }
+                out.putNextEntry(ZipEntry(entry.name).apply { time = entry.time; comment = entry.comment })
+                out.write(bytes)
+                out.closeEntry()
+            }
+        }
+    }
+    require(changedFlags > 0) {
+        "No supported owner ad-config flag set to true was found in assets/ or res/raw/. No patch was applied."
+    }
+    return OwnerAdPatchResult(changed, changedFlags)
+}
+
 private fun apkDiffSummary(before: File, after: File): String {
     fun hashes(file: File): Map<String, String> = ZipFile(file).use { zip ->
         val out = linkedMapOf<String, String>()
@@ -101,7 +172,7 @@ private fun apkDiffSummary(before: File, after: File): String {
     val added = b.keys - a.keys; val removed = a.keys - b.keys
     val changed = (a.keys intersect b.keys).filter { a[it] != b[it] }
     return buildString {
-        appendLine("OMNI CYBER LAB • APK BEFORE / AFTER DIFF")
+        appendLine("LUCKY PATCHES • APK BEFORE / AFTER DIFF")
         appendLine("Original SHA-256: ${labSha256(before)}")
         appendLine("Modified SHA-256: ${labSha256(after)}")
         appendLine("Entries: ${a.size} original → ${b.size} modified")
@@ -125,6 +196,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
     var patchedFile by remember { mutableStateOf<File?>(null) }
     var diffReport by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var ownerAuthorized by remember(packageName) { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri: Uri? ->
         if (uri != null && patchedFile?.isFile == true) {
             scope.launch {
@@ -161,7 +233,35 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("IAP / LICENSE SIM", fontSize = 10.sp) })
         }
         if (tab == 0) {
-            Text("TEXT RESOURCE / ASSET PATCHER", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            Text("OWNER AD-CONFIG PATCH • REAL APK RESOURCE EDIT", color = LabGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            Text("For an app you own or have written permission to modify. This changes supported ad-enable flags in text config files under assets/ and res/raw/, then rebuilds a modified unsigned APK. It does not strip third-party ad SDK code or bypass another developer's monetization.", color = LabWarn, fontSize = 9.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Checkbox(checked = ownerAuthorized, onCheckedChange = { ownerAuthorized = it })
+                Text("I own this app or have explicit authorization to patch it.", color = LabMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
+            }
+            Button(onClick = {
+                scope.launch {
+                    busy = true
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            require(ownerAuthorized) { "Confirm owner authorization first." }
+                            require(!apkPath.isNullOrBlank()) { "Import an APK first." }
+                            val src = File(apkPath!!)
+                            val out = File(context.cacheDir, "lucky-patches-owner-ads-${System.currentTimeMillis()}.apk")
+                            val patch = applyOwnerAdConfigPatch(src, out)
+                            patch to out
+                        }
+                        patchedFile = result.second
+                        diffReport = withContext(Dispatchers.IO) { apkDiffSummary(File(apkPath!!), result.second) }
+                        patchStatus = "PATCH APPLIED • ${result.first.changedFlags} ad-config flag(s) changed across ${result.first.changedEntries.size} file(s). APK rebuilt unsigned. Verify behavior in your own test build."
+                    } catch (e: Exception) {
+                        patchStatus = "OWNER PATCH NOT APPLIED: ${e.message ?: "unknown error"}"
+                    }
+                    busy = false
+                }
+            }, enabled = !busy && ownerAuthorized && !apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text(if (busy) "Applying owner patch…" else "Apply owner ad-config patch")
+            }
             Text("Source: ${apkPath?.let { File(it).name } ?: "No APK imported"}", color = LabMuted, fontSize = 10.sp)
             Button(onClick = { scope.launch { busy = true; try { entries = withContext(Dispatchers.IO) { require(!apkPath.isNullOrBlank()) { "Import an APK first." }; listEditableApkEntries(File(apkPath)) }; selectedEntry = entries.firstOrNull().orEmpty(); editedText = if (selectedEntry.isNotBlank()) withContext(Dispatchers.IO) { readEditableEntry(File(apkPath!!), selectedEntry) } else ""; patchStatus = "${entries.size} editable text entries found. Binary resources and manifest are intentionally excluded." } catch (e: Exception) { patchStatus = "Scan failed: ${e.message}" }; busy = false } }, enabled = !busy && !apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Scanning…" else "Scan editable APK entries") }
             if (entries.isNotEmpty()) {
