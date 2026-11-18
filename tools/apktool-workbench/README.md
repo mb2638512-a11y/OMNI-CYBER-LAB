@@ -49,3 +49,31 @@ This workbench is for resource engineering, localization, UI/branding experiment
 - On-device full Apktool resource rebuild: not implemented; Android app links to this Windows companion.
 - APK signing: available in OMNI's Android signing workflow; desktop example uses apksigner.
 - Automated install/runtime verification: not part of this script; report marks it NOT TESTED.
+
+
+## On-device Android ARM64 rebuild (Termux companion)
+
+The phone can also decode and rebuild resources locally through Termux's native ARM64 toolchain. This is an on-device companion workflow, not a claim that Apktool runs inside the OMNI Android process. It uses Termux packages and native AAPT2; the OMNI script checks the original APK hash, refuses to overwrite inputs/outputs, creates a resource baseline and emits JSON + TXT evidence reports.
+
+1. Install Termux from a trusted official distribution. Keep Termux and its plugins from the same distribution/signing source.
+2. Download omni-apktool-android.sh from this repository into your phone's Download folder.
+3. Open Termux and run:
+~~~bash
+termux-setup-storage
+cd ~/storage/downloads
+bash omni-apktool-android.sh setup
+~~~
+4. Put the APK you own in /sdcard/Download/OMNI-APK-Workbench/, then:
+~~~bash
+bash omni-apktool-android.sh decode /sdcard/Download/OMNI-APK-Workbench/my-owned-app.apk
+~~~
+5. Edit only decoded res/ and assets/ resources using a text editor/file manager, then rebuild:
+~~~bash
+bash omni-apktool-android.sh build /sdcard/Download/OMNI-APK-Workbench/my-owned-app-work
+~~~
+6. The script creates an unsigned rebuilt APK, a zip-aligned unsigned APK and JSON/TXT reports. Sign with your own keystore:
+~~~bash
+bash omni-apktool-android.sh sign /sdcard/Download/OMNI-APK-Workbench/my-owned-app-work-rebuilt-aligned-unsigned.apk /sdcard/Download/OMNI-APK-Workbench/owner-key.jks keyalias
+~~~
+
+Termux packages used: OpenJDK 21, Apktool, native AAPT2, zipalign, apksigner and Python. The script checks for ARM64 and explicitly passes the Termux native AAPT2 executable to Apktool to avoid an incompatible bundled desktop binary. DEX rebuilding is deliberately disabled in this resource-only workflow. Signature is checked only after the separate sign command; runtime and install tests are not claimed by the build report.
