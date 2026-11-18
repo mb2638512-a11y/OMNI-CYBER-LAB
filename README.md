@@ -150,3 +150,8 @@ This repository contains source code. A build is considered successful only when
 - Adds 12 manual lifecycle checks for backend purchase verification, pending purchases, acknowledgement/consumption, duplicate callbacks, restore, refunds/revocation, subscription expiry/grace/account hold, account switching, purchase-token validation and sandbox/production separation.
 - Records PASS, FAIL, NEEDS REVIEW with redacted evidence references; latest 100 observations are saved locally and included in JSON exports.
 - Use official billing sandbox and client-owned test accounts. No real payment is modified and no paid entitlement is bypassed.
+
+### Vulnerability finding enrichment
+
+- Structured findings now accept an optional CVSS v3.1 base score (validated to 0.0–10.0) and CWE reference, alongside severity, reproduction steps, impact/evidence and remediation.
+- CVSS score and CWE are operator-entered metadata; the app does not calculate or independently validate a CVSS vector. Findings remain UNVERIFIED until supported by evidence and review.
