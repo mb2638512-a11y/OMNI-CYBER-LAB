@@ -136,17 +136,17 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
     val diffExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
         if (uri != null && diffReport.isNotBlank()) scope.launch { try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(diffReport) } ?: error("Could not open report destination.") }; patchStatus = "Before/after diff report exported." } catch (e: Exception) { patchStatus = "Diff export failed: ${e.message}" } }
     }
+    val productKey = "billing_product_$packageName"
+    val productIdSaved = prefs.getString(productKey, "test.premium.monthly") ?: "test.premium.monthly"
+    var productId by remember(packageName) { mutableStateOf(productIdSaved) }
+    var purchaseState by remember(packageName) { mutableStateOf(prefs.getString("billing_state_$packageName", "NOT PURCHASED") ?: "NOT PURCHASED") }
+    var eventLog by remember(packageName) { mutableStateOf(prefs.getString("billing_log_$packageName", "") ?: "") }
     val billingExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) scope.launch { try {
             val payload = JSONObject().put("packageName", packageName).put("productId", productId).put("simulatedState", purchaseState).put("generatedAt", java.text.DateFormat.getDateTimeInstance().format(java.util.Date())).put("events", JSONArray(eventLog.lines().filter { it.isNotBlank() }))
             withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Could not open JSON destination.") }
         } catch (e: Exception) { eventLog = (eventLog + "\nExport failed: ${e.message}").takeLast(12000) } }
     }
-    val productKey = "billing_product_$packageName"
-    val productIdSaved = prefs.getString(productKey, "test.premium.monthly") ?: "test.premium.monthly"
-    var productId by remember(packageName) { mutableStateOf(productIdSaved) }
-    var purchaseState by remember(packageName) { mutableStateOf(prefs.getString("billing_state_$packageName", "NOT PURCHASED") ?: "NOT PURCHASED") }
-    var eventLog by remember(packageName) { mutableStateOf(prefs.getString("billing_log_$packageName", "") ?: "") }
     fun recordBilling(next: String, detail: String) {
         purchaseState = next
         val line = "${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())} • $next • $detail"
