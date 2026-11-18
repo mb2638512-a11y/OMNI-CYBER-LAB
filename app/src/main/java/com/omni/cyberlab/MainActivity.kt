@@ -760,6 +760,18 @@ private fun securityEvidenceCorrelations(findings: List<String>, evidence: Strin
         if (category != null && evidenceSignals.contains(category)) line.substringAfter("] ").trim() + " ↔ " + category else null
     }.distinct()
 }
+private fun securityRetestGuidance(title: String): String {
+    val value = title.lowercase()
+    return when {
+        value.contains("permission") || value.contains("component") -> "Repeat permission grant/deny flows and verify exported entry-point access with an authorized test account."
+        value.contains("network") || value.contains("tls") || value.contains("cleartext") -> "Repeat the approved HTTPS / network test and review certificate, protocol and cleartext policy evidence."
+        value.contains("sign") || value.contains("debug") || value.contains("identity") -> "Re-check the installed build version, debug flag and signing fingerprint against the trusted release."
+        value.contains("billing") || value.contains("purchase") || value.contains("subscription") -> "Repeat only the official sandbox purchase flow and verify the backend receipt state."
+        value.contains("storage") || value.contains("database") -> "Repeat offline, low-storage and database recovery scenarios; inspect only owner-authorized logs."
+        value.contains("crash") || value.contains("runtime") || value.contains("anr") -> "Repeat the documented user journey and capture a fresh bounded log snapshot if an issue recurs."
+        else -> "Re-run the matching static check, compare the current package metadata and record fresh evidence."
+    }
+}
 private fun securityTestCategory(title: String): String {
     val value = title.lowercase()
     return when {
@@ -2506,6 +2518,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
         }
         loaded
     } catch (_: Exception) { emptyMap<String, String>() }) }
+    val retestQueue = findings.filter { finding -> remediation[finding.substringAfter("] ").ifBlank { finding }] == "READY TO RETEST" }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text("SECURITY FINDINGS DASHBOARD", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text(app.name + " • " + app.pkg, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
@@ -2553,6 +2566,19 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
             }
             Text("Counts represent configured rule matches per saved run, not confirmed vulnerabilities or a security score.", color = Grey, fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
         }
+        Text("RETEST QUEUE • ${retestQueue.size} ITEMS", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
+        if (retestQueue.isEmpty()) {
+            Text("No findings are currently marked READY TO RETEST. Move a remediation item through the tracker when you have made a change.", color = Grey, fontSize = 9.sp)
+        } else {
+            retestQueue.forEach { finding ->
+                val title = finding.substringAfter("] ").ifBlank { finding }
+                Column(Modifier.fillMaxWidth().background(CardBg, RoundedCornerShape(10.dp)).padding(10.dp)) {
+                    Text(title, color = Orange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(securityRetestGuidance(title), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text("After performing the manual retest, use the tracker below to record that a retest was attempted. This is not an automatic pass.", color = Grey, fontSize = 8.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
         Text("FINDINGS & REVIEW TRACKER", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
         findings.forEach { finding ->
             val title = finding.substringAfter("] ").ifBlank { finding }
@@ -2570,7 +2596,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
                     val status = remediation[title] ?: "OPEN"
                     Text("Remediation: $status", color = when (status) { "IN PROGRESS" -> Blue; "READY TO RETEST" -> Orange; else -> Grey }, fontSize = 9.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
-                        val next = when (status) { "OPEN" -> "IN PROGRESS"; "IN PROGRESS" -> "READY TO RETEST"; else -> "OPEN" }
+                        val next = when (status) { "OPEN" -> "IN PROGRESS"; "IN PROGRESS" -> "READY TO RETEST"; "READY TO RETEST" -> "RETEST RECORDED • REVIEW"; else -> "OPEN" }
                         val updated = remediation.toMutableMap().apply { put(title, next) }
                         remediation = updated
                         val json = org.json.JSONObject()
