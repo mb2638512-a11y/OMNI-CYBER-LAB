@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/idtoken"
 )
 
 type server struct {
@@ -270,6 +272,76 @@ func (s *server) verifyWithGoogle(ctx context.Context, req verifyRequest) (verif
 	return verifyResponse{Verified:true, Entitled:entitled, State:p.SubscriptionState, ProductID:req.ProductID}, nil
 }
 
+
+type rtdnEnvelope struct {
+ Message struct { Data string `json:"data"`; MessageID string `json:"messageId"` } `json:"message"`
+ Subscription string `json:"subscription"`
+}
+type rtdnData struct {
+ PackageName string `json:"packageName"`
+ SubscriptionNotification *struct {
+  Version string `json:"version"`
+  NotificationType int `json:"notificationType"`
+  PurchaseToken string `json:"purchaseToken"`
+  SubscriptionID string `json:"subscriptionId"`
+ } `json:"subscriptionNotification"`
+ TestNotification *struct { Version string `json:"version"` } `json:"testNotification"`
+}
+func (s *server) rtdn(w http.ResponseWriter, r *http.Request) {
+ if r.Method != http.MethodPost { writeJSON(w,405,map[string]string{"error":"POST required"}); return }
+ audience:=strings.TrimSpace(os.Getenv("PUBSUB_PUSH_AUDIENCE")); expectedEmail:=strings.TrimSpace(os.Getenv("PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL"))
+ auth:=strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer "))
+ if audience=="" || expectedEmail=="" || auth=="" { writeJSON(w,401,map[string]string{"error":"Pub/Sub OIDC configuration required"}); return }
+ ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second); defer cancel()
+ payload,err:=idtoken.Validate(ctx,auth,audience)
+ if err!=nil || payload.Claims["email"]!=expectedEmail || payload.Claims["email_verified"]!=true { writeJSON(w,401,map[string]string{"error":"invalid Pub/Sub push identity"}); return }
+ r.Body=http.MaxBytesReader(w,r.Body,128*1024)
+ var envelope rtdnEnvelope; dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
+ if err:=dec.Decode(&envelope); err!=nil || envelope.Message.Data=="" { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub envelope"}); return }
+ raw,err:=base64.StdEncoding.DecodeString(envelope.Message.Data); if err!=nil { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub data encoding"}); return }
+ var data rtdnData; if err:=json.Unmarshal(raw,&data); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid RTDN payload"}); return }
+ if data.TestNotification!=nil { writeJSON(w,200,map[string]string{"status":"test notification acknowledged"}); return }
+ n:=data.SubscriptionNotification
+ if n==nil || n.PurchaseToken=="" || data.PackageName=="" || !s.allowedPackages[data.PackageName] { writeJSON(w,200,map[string]string{"status":"ignored unsupported or non-allowlisted notification"}); return }
+ hash:=sha256.Sum256([]byte(n.PurchaseToken)); tokenHash:=hex.EncodeToString(hash[:])
+ var userID,productID string
+ err=s.db.QueryRow(ctx,"SELECT user_id,product_id FROM play_purchase_ledger WHERE token_sha256=$1 AND package_name=$2 AND purchase_type='subscription'",tokenHash,data.PackageName).Scan(&userID,&productID)
+ if errors.Is(err,pgx.ErrNoRows) { writeJSON(w,200,map[string]string{"status":"notification received; no previously verified subscription record"}); return }
+ if err!=nil { writeJSON(w,500,map[string]string{"error":"subscription ledger lookup failed"}); return }
+ if n.SubscriptionID!="" && n.SubscriptionID!=productID { writeJSON(w,200,map[string]string{"status":"notification product mismatch ignored"}); return }
+ result,err:=s.verifyWithGoogle(ctx,verifyRequest{PackageName:data.PackageName,ProductID:productID,PurchaseToken:n.PurchaseToken,UserID:userID,PurchaseType:"subscription"})
+ if err!=nil { writeJSON(w,503,map[string]string{"error":"Google Play reconciliation failed; retry notification"}); return }
+ _,err=s.db.Exec(ctx,"UPDATE play_purchase_ledger SET purchase_state=$1,entitled=$2,verified_at=NOW() WHERE token_sha256=$3 AND user_id=$4",result.State,result.Entitled,tokenHash,userID)
+ if err!=nil { writeJSON(w,500,map[string]string{"error":"subscription reconciliation persistence failed"}); return }
+ writeJSON(w,200,map[string]any{"status":"subscription reconciled","entitled":result.Entitled,"state":result.State})
+}
+type purchaseActionRequest struct { PackageName string `json:"packageName"`; ProductID string `json:"productId"`; PurchaseToken string `json:"purchaseToken"`; UserID string `json:"userId"` }
+func (s *server) purchaseAction(consume bool) http.HandlerFunc {
+ return func(w http.ResponseWriter,r *http.Request) {
+  if r.Method!=http.MethodPost { writeJSON(w,405,map[string]string{"error":"POST required"}); return }
+  if !s.authorized(r) { writeJSON(w,401,map[string]string{"error":"unauthorized"}); return }
+  r.Body=http.MaxBytesReader(w,r.Body,16*1024)
+  var req purchaseActionRequest; dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
+  if err:=dec.Decode(&req); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid request body"}); return }
+  if req.PackageName=="" || req.ProductID=="" || req.PurchaseToken=="" || req.UserID=="" || !s.allowedPackages[req.PackageName] || !s.allowedProducts[req.ProductID] { writeJSON(w,403,map[string]string{"error":"missing or non-allowlisted purchase identity"}); return }
+  ctx,cancel:=context.WithTimeout(r.Context(),12*time.Second); defer cancel()
+  hash:=sha256.Sum256([]byte(req.PurchaseToken)); tokenHash:=hex.EncodeToString(hash[:])
+  var owner,pkg,product,kind string; var entitled bool
+  err:=s.db.QueryRow(ctx,"SELECT user_id,package_name,product_id,purchase_type,entitled FROM play_purchase_ledger WHERE token_sha256=$1",tokenHash).Scan(&owner,&pkg,&product,&kind,&entitled)
+  if err!=nil || owner!=req.UserID || pkg!=req.PackageName || product!=req.ProductID || kind!="product" || !entitled { writeJSON(w,403,map[string]string{"error":"no matching verified, entitled one-time purchase"}); return }
+  action:="acknowledge"
+  endpoint:="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/"+url.PathEscape(req.PackageName)+"/purchases/products/"+url.PathEscape(req.ProductID)+"/tokens/"+url.PathEscape(req.PurchaseToken)+":acknowledge"
+  if consume { action="consume"; endpoint="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/"+url.PathEscape(req.PackageName)+"/purchases/products/"+url.PathEscape(req.ProductID)+"/tokens/"+url.PathEscape(req.PurchaseToken)+":consume" }
+  httpReq,err:=http.NewRequestWithContext(ctx,http.MethodPost,endpoint,strings.NewReader(`{"developerPayload":"omni-cyber-lab"}`))
+  if err!=nil { writeJSON(w,500,map[string]string{"error":"could not create Publisher API request"}); return }
+  httpReq.Header.Set("Content-Type","application/json")
+  resp,err:=s.googleClient.Do(httpReq); if err!=nil { writeJSON(w,502,map[string]string{"error":"Google Play action request failed; retry safely"}); return }
+  defer resp.Body.Close(); _,_=io.Copy(io.Discard,io.LimitReader(resp.Body,64*1024))
+  if resp.StatusCode!=http.StatusOK && resp.StatusCode!=http.StatusNoContent { writeJSON(w,502,map[string]string{"error":"Google Play rejected "+action+" request","publisherStatus":fmt.Sprint(resp.StatusCode)}); return }
+  writeJSON(w,200,map[string]any{"success":true,"action":action,"message":"Google Play accepted the action for the verified purchase."})
+ }
+}
+
 func main() {
 	apiKey := os.Getenv("OMNI_VERIFIER_API_KEY")
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -292,6 +364,9 @@ func main() {
 	mux.HandleFunc("/v1/play/verify", s.verify)
 	mux.HandleFunc("/v1/wallet/fulfill", s.fulfillWallet)
 	mux.HandleFunc("/v1/wallet/spend", s.spendWallet)
+	mux.HandleFunc("/v1/play/rtdn", s.rtdn)
+	mux.HandleFunc("/v1/play/acknowledge", s.purchaseAction(false))
+	mux.HandleFunc("/v1/play/consume", s.purchaseAction(true))
 	port := os.Getenv("PORT"); if port=="" { port="8080" }
 	srv := &http.Server{Addr:":"+port, Handler:mux, ReadHeaderTimeout:5*time.Second, ReadTimeout:10*time.Second, WriteTimeout:20*time.Second, IdleTimeout:60*time.Second}
 	log.Printf("Play verifier listening on :%s", port)
