@@ -665,7 +665,7 @@ private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<Str
         val pidProcess = startShizukuProcess(arrayOf("sh", "-c", "pidof $packageName"))
         val pid = try { pidProcess.inputStream.bufferedReader().readText().trim().split(Regex("\\s+")).firstOrNull { it.matches(Regex("[0-9]+")) } } finally { pidProcess.destroy() }
         if (pid.isNullOrBlank()) return@withContext listOf("Target process is not running. Launch the app, reproduce the flow, then capture logs.")
-        val logProcess = startShizukuProcess(arrayOf("logcat", "-d", "--pid=$pid", "-t", "250"))
+        val logProcess = startShizukuProcess(arrayOf("logcat", "-v", "threadtime", "-d", "--pid=$pid", "-t", "250"))
         val rawLines = try { logProcess.inputStream.bufferedReader().use { reader -> generateSequence { reader.readLine() }.take(250).toList() } } finally { logProcess.destroy() }
         val secretPattern = Regex("""(?i)(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|password|client[_-]?secret)(\s*[:=]\s*)[^\s,;]+""")
         val emailPattern = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
@@ -685,6 +685,14 @@ private suspend fun captureRuntimeLogsWithShizuku(packageName: String): List<Str
             add("RUNTIME LOG TRIAGE • $packageName")
             add("Captured ${rawLines.size} recent process log lines for PID $pid; secrets and email-like values redacted.")
             add("Matched diagnostic lines: ${matches.size} • maximum 60 displayed")
+            val fatalCount = matches.count { it.contains("FATAL EXCEPTION", true) || it.contains("ANR in", true) }
+            val platformCount = matches.count { it.contains("SecurityException", true) || it.contains("Permission Denial", true) }
+            val networkCount = matches.count { listOf("SSLHandshakeException", "CertPathValidatorException", "Trust anchor", "Cleartext", "UnknownHostException", "SocketTimeoutException").any { marker -> it.contains(marker, true) } }
+            val performanceCount = matches.count { it.contains("StrictMode", true) || it.contains("NetworkOnMainThreadException", true) || (it.contains("Skipped", true) && it.contains("frames", true)) }
+            val storageCount = matches.count { listOf("SQLiteException", "FileNotFoundException", "ENOSPC", "No space left").any { marker -> it.contains(marker, true) } }
+            add("STRUCTURED INCIDENT SUMMARY")
+            add("CRASH / ANR events: $fatalCount • PLATFORM / PERMISSION: $platformCount • NETWORK / TLS: $networkCount • PERFORMANCE: $performanceCount • STORAGE: $storageCount")
+            add("Log timestamps use Android threadtime format when available; repeated lines may describe one incident.")
             ruleGroups.forEach { (group, markers) ->
                 val count = matches.count { line -> markers.any { line.contains(it, true) || runCatching { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(line) }.getOrDefault(false) } }
                 add("$group • $count")
@@ -2436,6 +2444,8 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
     var evidence by remember(packageName) { mutableStateOf(prefs.getString(evidenceKey, "") ?: "") }
     val completed = remember(packageName) { mutableStateListOf<Boolean>().apply { val saved = prefs.getString(stateKey, "") ?: ""; checks.indices.forEach { add(saved.getOrNull(it) == '1') } } }
     var notes by remember(packageName) { mutableStateOf(prefs.getString(noteKey, "") ?: "") }
+    val scenarioKey = "scenario_" + packageName
+    var scenario by remember(packageName) { mutableStateOf(prefs.getString(scenarioKey, "") ?: "") }
     var startedAt by remember(packageName) { mutableStateOf(prefs.getLong(startedKey, 0L)) }
     val doneCount = completed.count { it }
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
@@ -2452,13 +2462,15 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
                 Text(label, color = if (completed[index]) Green else Grey, fontSize = 10.sp)
             }
         }
+        OutlinedTextField(value = scenario, onValueChange = { scenario = it.take(120) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Current test step / scenario") }, singleLine = true)
         OutlinedTextField(value = notes, onValueChange = { notes = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Observations / evidence notes") }, minLines = 3)
-        Button(onClick = { prefs.edit().putString(noteKey, notes).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save session notes") }
+        Button(onClick = { prefs.edit().putString(noteKey, notes).putString(scenarioKey, scenario).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save session notes") }
         val hasDiagnostics = runtimeLogReport.isNotBlank() || shizukuReport.isNotBlank()
         Button(onClick = {
             val stamp = java.text.DateFormat.getDateTimeInstance().format(java.util.Date())
             val block = buildString {
                 appendLine("CAPTURED: " + stamp)
+                appendLine("TEST STEP / SCENARIO: " + if (scenario.isBlank()) "Not specified" else scenario)
                 if (runtimeLogReport.isNotBlank()) { appendLine("PROCESS LOG TRIAGE (bounded snapshot)"); appendLine(runtimeLogReport.take(10000)) }
                 if (shizukuReport.isNotBlank()) { appendLine("SHIZUKU PACKAGE DIAGNOSTICS (read-only)"); appendLine(shizukuReport.take(10000)) }
             }
@@ -2470,7 +2482,7 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
             Text(evidence.takeLast(1800), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
             TextButton(onClick = { evidence = ""; prefs.edit().remove(evidenceKey).apply() }) { Text("Clear attached evidence") }
         }
-        OutlinedButton(onClick = { completed.indices.forEach { completed[it] = false }; notes = ""; startedAt = 0L; evidence = ""; prefs.edit().remove(stateKey).remove(noteKey).remove(startedKey).remove(evidenceKey).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear this app's session") }
+        OutlinedButton(onClick = { completed.indices.forEach { completed[it] = false }; notes = ""; scenario = ""; startedAt = 0L; evidence = ""; prefs.edit().remove(stateKey).remove(noteKey).remove(scenarioKey).remove(startedKey).remove(evidenceKey).apply() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Clear this app's session") }
         Text("Diagnostics attach only when you tap the button. Evidence is bounded and stored locally; review sensitive details before sharing the PDF. No traffic interception, TLS bypass, payment unlocking or background monitoring is performed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
