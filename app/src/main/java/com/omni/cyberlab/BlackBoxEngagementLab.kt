@@ -53,6 +53,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         if (activeEngagementId == "default") context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
         else context.getSharedPreferences("omni_blackbox_${packageName}_$activeEngagementId", Context.MODE_PRIVATE)
     }
+    var evidenceJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("secure_evidence_index", "[]") ?: "[]") }
+    var pendingEvidenceExportId by remember(packageName, activeEngagementId) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var target by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
     var clientName by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
@@ -71,6 +73,28 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var notes by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("notes", "") ?: "") }
     var checked by remember(packageName, activeEngagementId) { mutableStateOf(blackBoxChecks.indices.filter { prefs.getBoolean("check_$it", false) }.toSet()) }
     var status by remember { mutableStateOf("Define the client scope before starting an engagement.") }
+    val evidenceImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            try {
+                val label = uri.lastPathSegment?.substringAfterLast("/")?.take(100) ?: "Evidence attachment"
+                val record = withContext(Dispatchers.IO) { SecureEvidenceVault.import(context, activeEngagementId, uri, label) }
+                val records = runCatching { JSONArray(evidenceJson) }.getOrElse { JSONArray() }
+                records.put(record)
+                evidenceJson = records.toString()
+                prefs.edit().putString("secure_evidence_index", evidenceJson).apply()
+                status = "Evidence encrypted and saved in this engagement workspace."
+            } catch (e: Exception) { status = "Evidence import failed: ${e.message}" }
+        }
+    }
+    val evidenceExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        if (uri != null && pendingEvidenceExportId.isNotBlank()) scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { SecureEvidenceVault.read(context, activeEngagementId, pendingEvidenceExportId) }
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Cannot open export destination.")
+                status = "Evidence decrypted and exported to the selected destination."
+            } catch (e: Exception) { status = "Evidence export failed: ${e.message}" }
+        }
+    }
     var endpoint by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_endpoint", "") ?: "") }
     var probeMethod by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
     var probeBusy by remember { mutableStateOf(false) }
@@ -125,6 +149,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("localDataSecurityTests", JSONArray(localDataJson))
                 .put("networkSecurityTests", JSONArray(networkJson))
                 .put("clientName", clientName)
+                .put("encryptedEvidenceIndex", JSONArray(evidenceJson))
                 .put("engagementName", engagementName)
                 .put("engagementStatus", engagementStatus)
                 .put("engagementReference", engagementReference)
@@ -147,6 +172,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                     appendLine("Reference: $engagementReference")
                     appendLine("Status: $engagementStatus")
                     appendLine("Saved engagement checkpoints: ${JSONArray(engagementSnapshotsJson).length()}")
+                    appendLine("Encrypted evidence attachments: ${JSONArray(evidenceJson).length()} (not embedded in this PDF; export separately)")
                     appendLine("Target: $target")
                     appendLine("Package: $packageName")
                     appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
@@ -272,6 +298,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             AlertDialog(onDismissRequest = { showDeleteWorkspaceDialog = false }, title = { Text("Delete this workspace?") },
                 text = { Text("This permanently clears this engagement workspace and its locally stored assessment records. Export any report you need first. The Original workspace is not affected.") },
                 confirmButton = { TextButton(onClick = {
+                    SecureEvidenceVault.clear(context, activeEngagementId)
                     prefs.edit().clear().apply()
                     val updated = runCatching { JSONArray(engagementRegistryJson) }.getOrElse { JSONArray() }
                     val kept = JSONArray()
@@ -284,6 +311,34 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
                 dismissButton = { TextButton(onClick = { showDeleteWorkspaceDialog = false }) { Text("Cancel") } })
         }
+        Divider()
+        Text("ENCRYPTED EVIDENCE VAULT", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+        Text("Attachments are encrypted with AES-256-GCM using an Android Keystore key and stored inside this app. Maximum 10 MB per file. Export decrypts a copy to the destination you choose.", style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = { evidenceImport.launch(arrayOf("*/*")) }, enabled = authorized, modifier = Modifier.fillMaxWidth()) { Text("Import evidence attachment (authorization required)") }
+        val evidenceRecords = runCatching { JSONArray(evidenceJson) }.getOrElse { JSONArray() }
+        Text("Encrypted attachments: ${evidenceRecords.length()}", style = MaterialTheme.typography.labelLarge)
+        for (index in (evidenceRecords.length() - 5).coerceAtLeast(0) until evidenceRecords.length()) {
+            val record = evidenceRecords.optJSONObject(index) ?: continue
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(record.optString("label"), style = MaterialTheme.typography.bodyMedium)
+                    Text("${record.optInt("bytes")} bytes • ${record.optString("savedAt")} • ${record.optString("encryption")}", style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pendingEvidenceExportId = record.optString("id"); evidenceExport.launch(record.optString("label").ifBlank { "evidence.bin" }) }, modifier = Modifier.weight(1f)) { Text("Export copy") }
+                        OutlinedButton(onClick = {
+                            val id = record.optString("id")
+                            runCatching { SecureEvidenceVault.delete(context, activeEngagementId, id) }
+                            val remaining = JSONArray()
+                            for (i in 0 until evidenceRecords.length()) { val item = evidenceRecords.optJSONObject(i) ?: continue; if (item.optString("id") != id) remaining.put(item) }
+                            evidenceJson = remaining.toString()
+                            prefs.edit().putString("secure_evidence_index", evidenceJson).apply()
+                            status = "Evidence attachment removed."
+                        }, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete") }
+                    }
+                }
+            }
+        }
+        if (evidenceRecords.length() == 0) Text("No encrypted evidence attachments yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
         Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Organize assessments by client and engagement reference. Do not store client secrets or personal contact details here.", style = MaterialTheme.typography.bodySmall)
