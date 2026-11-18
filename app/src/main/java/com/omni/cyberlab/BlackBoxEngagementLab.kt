@@ -50,6 +50,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var probeMethod by remember(packageName) { mutableStateOf(prefs.getString("probe_method", "GET") ?: "GET") }
     var probeBusy by remember { mutableStateOf(false) }
     var probeResult by remember(packageName) { mutableStateOf(prefs.getString("probe_result", "") ?: "") }
+    var probeHistoryJson by remember(packageName) { mutableStateOf(prefs.getString("probe_history", "[]") ?: "[]") }
     var findingTitle by remember(packageName) { mutableStateOf("") }
     var findingSeverity by remember(packageName) { mutableStateOf("MEDIUM") }
     var findingSteps by remember(packageName) { mutableStateOf("") }
@@ -71,6 +72,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("remainingChecks", JSONArray(blackBoxChecks.indices.filter { it !in checked }.map { blackBoxChecks[it] }))
                 .put("operatorNotes", notes)
                 .put("lastEndpointProbe", if (probeResult.isBlank()) JSONObject.NULL else JSONObject(probeResult))
+                .put("endpointProbeHistory", JSONArray(probeHistoryJson))
                 .put("findings", JSONArray(findingsJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
@@ -115,8 +117,16 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 try {
                     val result = runScopedEndpointProbe(endpoint, allowed, probeMethod)
                     probeResult = result.toJson().toString(2)
-                    prefs.edit().putString("probe_result", probeResult).apply()
-                    status = "Scoped endpoint probe complete: HTTP ${result.statusCode} in ${result.durationMs} ms."
+                    val history = runCatching { JSONArray(probeHistoryJson) }.getOrElse { JSONArray() }
+                    val previous = if (history.length() > 0) history.optJSONObject(history.length() - 1) else null
+                    val certChanged = previous != null && previous.optString("certificateSha256").isNotBlank() && result.certificateSha256.isNotBlank() && previous.optString("certificateSha256") != result.certificateSha256
+                    val record = result.toJson().put("checkedAt", DateFormat.getDateTimeInstance().format(Date())).put("certificateChangedSincePrevious", certChanged)
+                    history.put(record)
+                    val trimmed = JSONArray()
+                    for (i in maxOf(0, history.length() - 10) until history.length()) trimmed.put(history.get(i))
+                    probeHistoryJson = trimmed.toString()
+                    prefs.edit().putString("probe_result", probeResult).putString("probe_history", probeHistoryJson).apply()
+                    status = "Scoped endpoint probe complete: HTTP ${result.statusCode} in ${result.durationMs} ms." + if (certChanged) " REVIEW: certificate fingerprint changed since previous probe." else ""
                 } catch (e: Exception) { status = "Probe not completed: ${e.message ?: "unknown error"}" }
                 finally { probeBusy = false }
             }
@@ -131,6 +141,16 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             }
         }
         Text("This probe validates reachability and records response metadata; it does not prove an endpoint is vulnerable or secure.", style = MaterialTheme.typography.labelSmall)
+        val probeHistory = runCatching { JSONArray(probeHistoryJson) }.getOrElse { JSONArray() }
+        Text("PROBE HISTORY • ${probeHistory.length()} / 10", style = MaterialTheme.typography.labelLarge)
+        if (probeHistory.length() > 0) {
+            val recent = probeHistory.optJSONObject(probeHistory.length() - 1)
+            if (recent != null) {
+                Text("Latest: ${recent.optString("checkedAt")} • HTTP ${recent.optInt("statusCode")}", style = MaterialTheme.typography.bodySmall)
+                if (recent.optBoolean("certificateChangedSincePrevious")) Text("Certificate fingerprint changed since previous probe — review certificate rotation and deployment records.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Saved history includes status, latency, certificate fingerprint and header observations. Changes are review signals, not automatic attack or compromise findings.", style = MaterialTheme.typography.labelSmall)
+        } else Text("No endpoint probe history yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
