@@ -139,3 +139,14 @@ This repository contains source code. A build is considered successful only when
 - Adds manual checks for HTTPS-only API use, cleartext policy, TLS certificate validation, permissive trust managers, sensitive URL parameters, log/error leakage, redirect downgrade, server-side object authorization, response security/cache headers and fail-closed offline behavior.
 - Latest 100 observations are stored locally per package and included in the engagement JSON export.
 - This is a manual review workflow. It does not intercept arbitrary app traffic, bypass certificate validation, fuzz endpoints or perform automatic exploit attempts.
+
+### Client engagement workspace
+
+- Adds per-package client/organization, engagement title, optional purchase-order/reference and lifecycle status (PLANNED, ACTIVE, PAUSED, COMPLETED, CLOSED). Metadata is stored locally and included in engagement JSON exports.
+- Keep client secrets and personal contact details out of local notes. This is a single-device workspace, not a multi-tenant hosted client portal.
+
+### Purchase and subscription security lab
+
+- Adds 12 manual lifecycle checks for backend purchase verification, pending purchases, acknowledgement/consumption, duplicate callbacks, restore, refunds/revocation, subscription expiry/grace/account hold, account switching, purchase-token validation and sandbox/production separation.
+- Records PASS, FAIL, NEEDS REVIEW with redacted evidence references; latest 100 observations are saved locally and included in JSON exports.
+- Use official billing sandbox and client-owned test accounts. No real payment is modified and no paid entitlement is bypassed.
