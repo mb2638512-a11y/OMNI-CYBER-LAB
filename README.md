@@ -121,3 +121,9 @@ This repository contains source code. A build is considered successful only when
 - The black-box workspace now records manual access-control test cases with a route/resource label, client-owned actor role, expected ALLOW/DENY behavior, operator-observed result, evidence reference and timestamp.
 - Expected/observed mismatches are flagged as triage signals and retained in the engagement JSON export. The latest 100 cases are stored locally per package.
 - This is a manual evidence matrix, not an API crawler or automatic IDOR/BOLA exploit. Use only client-provided test accounts and records; verify suspected authorization failures with repeatable evidence and server-side context.
+
+### Authentication and session security test lab
+
+- The black-box workspace includes manual test cases for secure token storage, logout invalidation, expiry, refresh rotation/replay, revocation, account switching, concurrent sessions, authentication error disclosure, app restart persistence, background-screen exposure and sensitive-action re-authentication.
+- Operators record PASS, FAIL or NEEDS REVIEW with redacted evidence references. The latest 100 observations are stored locally per package and included in engagement JSON export.
+- This module does not capture, replay, revoke or modify tokens and does not independently verify outcomes. Use client-owned test accounts, approved environments and redacted evidence; never store credentials or live tokens in notes.
