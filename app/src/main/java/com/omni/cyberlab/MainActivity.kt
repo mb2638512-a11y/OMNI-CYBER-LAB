@@ -1987,6 +1987,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             if (current.title == "Advanced APK modification lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 0, modifier = Modifier.padding(top = 12.dp))
                             if (current.title == "License / IAP emulation lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 1, modifier = Modifier.padding(top = 12.dp))
                             if (current.title == "License / IAP emulation lab") BillingSecurityAuditPanel(context, app.pkg, app.apkPath, modifier = Modifier.padding(top = 12.dp))
+                            if (current.title == "License / IAP emulation lab") VirtualAssetSecurityLab(context, app.pkg, modifier = Modifier.padding(top = 12.dp))
                             if (featureResults.isNotEmpty()) {
                                 Text("AUTOMATED RESULT", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
                                 featureResults.forEach { result ->
