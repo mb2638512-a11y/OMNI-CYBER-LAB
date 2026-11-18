@@ -197,6 +197,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             try {
                 val reportText = buildString {
                     appendLine("OMNI CYBER LAB — CLIENT SECURITY ASSESSMENT")
+                    appendLine("CONFIDENTIAL • PREPARED FOR CLIENT REVIEW")
+                    appendLine("Report reference: ${engagementReference.ifBlank { "Not supplied" }}")
                     appendLine("Client: $clientName")
                     appendLine("Engagement: $engagementName")
                     appendLine("Reference: $engagementReference")
@@ -303,6 +305,34 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 val item = registryItems.optJSONObject(index) ?: continue
                 val id = item.optString("id")
                 FilterChip(selected = activeEngagementId == id, onClick = { activeEngagementId = id; renameWorkspaceTitle = item.optString("title"); registryPrefs.edit().putString("active_engagement_id", id).apply() }, label = { Text(item.optString("title").take(18)) })
+            }
+        }
+        val dashboardRows = mutableListOf<String>()
+        var dashboardFindingTotal = 0
+        var dashboardCheckpointTotal = 0
+        var dashboardEvidenceTotal = 0
+        val originalDashboardPrefs = context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
+        val originalFindings = runCatching { JSONArray(originalDashboardPrefs.getString("findings_json", "[]")) }.getOrElse { JSONArray() }.length()
+        val originalCheckpoints = runCatching { JSONArray(originalDashboardPrefs.getString("engagement_snapshots", "[]")) }.getOrElse { JSONArray() }.length()
+        val originalEvidence = runCatching { JSONArray(originalDashboardPrefs.getString("secure_evidence_index", "[]")) }.getOrElse { JSONArray() }.length()
+        dashboardFindingTotal += originalFindings; dashboardCheckpointTotal += originalCheckpoints; dashboardEvidenceTotal += originalEvidence
+        dashboardRows.add("Original workspace • $originalFindings findings • $originalCheckpoints checkpoints • $originalEvidence evidence files")
+        for (i in 0 until registryItems.length()) {
+            val item = registryItems.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            val wp = context.getSharedPreferences("omni_blackbox_${packageName}_$id", Context.MODE_PRIVATE)
+            val findings = runCatching { JSONArray(wp.getString("findings_json", "[]")) }.getOrElse { JSONArray() }.length()
+            val checkpoints = runCatching { JSONArray(wp.getString("engagement_snapshots", "[]")) }.getOrElse { JSONArray() }.length()
+            val evidence = runCatching { JSONArray(wp.getString("secure_evidence_index", "[]")) }.getOrElse { JSONArray() }.length()
+            dashboardFindingTotal += findings; dashboardCheckpointTotal += checkpoints; dashboardEvidenceTotal += evidence
+            dashboardRows.add("${item.optString("title")} • $findings findings • $checkpoints checkpoints • $evidence evidence files")
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("CLIENT PORTFOLIO OVERVIEW", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text("${registryItems.length() + 1} workspaces • $dashboardFindingTotal finding records • $dashboardCheckpointTotal checkpoints • $dashboardEvidenceTotal encrypted evidence files", style = MaterialTheme.typography.bodyMedium)
+                dashboardRows.take(6).forEach { Text(it, style = MaterialTheme.typography.labelSmall) }
+                if (dashboardRows.size > 6) Text("+ ${dashboardRows.size - 6} more workspaces", style = MaterialTheme.typography.labelSmall)
             }
         }
         Text("Active workspace: ${if (activeEngagementId == "default") "Original workspace" else activeEngagementId}", style = MaterialTheme.typography.labelSmall)
