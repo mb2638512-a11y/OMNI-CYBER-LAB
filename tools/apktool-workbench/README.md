@@ -46,14 +46,14 @@ This workbench is for resource engineering, localization, UI/branding experiment
 
 ## Honest capability status
 - Desktop binary resource decode/edit/rebuild: implemented through Apktool.
-- On-device Android ARM64 resource decode/rebuild: implemented through the Termux companion script; it rebuilds resources and the manifest, but intentionally does not rebuild DEX code.
+- On-device Android ARM64 full Apktool decode/rebuild: implemented through the Termux companion script; it decodes resources, manifest and DEX into Smali, then rebuilds them into an unsigned APK.
 - APK signing: available in OMNI's Android signing workflow; desktop example uses apksigner.
 - Automated install/runtime verification: not part of this script; report marks it NOT TESTED.
 
 
 ## On-device Android ARM64 rebuild (Termux companion)
 
-The phone can also decode and rebuild resources locally through Termux's native ARM64 toolchain. This is an on-device companion workflow, not a claim that Apktool runs inside the OMNI Android process. It uses Termux packages and native AAPT2; the OMNI script checks the original APK hash, refuses to overwrite inputs/outputs, creates a resource baseline and emits JSON + TXT evidence reports.
+The phone can decode and rebuild the full APK locally through Termux's native ARM64 toolchain, including Smali-to-DEX recompilation. This is an on-device companion workflow, not a claim that Apktool runs inside the OMNI Android process. It uses Termux packages and native AAPT2; the OMNI script checks the original APK hash, refuses to overwrite inputs/outputs, creates resource baselines and emits JSON + TXT evidence reports.
 
 1. Install Termux from a trusted official distribution. Keep Termux and its plugins from the same distribution/signing source.
 2. Download omni-apktool-android.sh from this repository into your phone's Download folder.
@@ -67,7 +67,7 @@ bash omni-apktool-android.sh setup
 ~~~bash
 bash omni-apktool-android.sh decode /sdcard/Download/OMNI-APK-Workbench/my-owned-app.apk
 ~~~
-5. Edit only decoded res/ and assets/ resources using a text editor/file manager, then rebuild:
+5. Edit decoded res/, assets/ and Smali source folders (smali/, smali_classes2/, etc.) using a text editor/file manager, then rebuild:
 ~~~bash
 bash omni-apktool-android.sh build /sdcard/Download/OMNI-APK-Workbench/my-owned-app-work
 ~~~
@@ -76,4 +76,4 @@ bash omni-apktool-android.sh build /sdcard/Download/OMNI-APK-Workbench/my-owned-
 bash omni-apktool-android.sh sign /sdcard/Download/OMNI-APK-Workbench/my-owned-app-work-rebuilt-aligned-unsigned.apk /sdcard/Download/OMNI-APK-Workbench/owner-key.jks keyalias
 ~~~
 
-Termux packages used: OpenJDK 21, Apktool, native AAPT2, zipalign, apksigner and Python. The script checks for ARM64 and explicitly passes the Termux native AAPT2 executable to Apktool to avoid an incompatible bundled desktop binary. DEX rebuilding is deliberately disabled in this resource-only workflow. Signature is checked only after the separate sign command; runtime and install tests are not claimed by the build report.
+Termux packages used: OpenJDK 21, Apktool, native AAPT2, zipalign, apksigner and Python. The script checks for ARM64 and explicitly passes the Termux native AAPT2 executable to Apktool to avoid an incompatible bundled desktop binary. Full decode uses Apktool's Smali output (not Java source); Apktool rebuild recompiles Smali into DEX along with resources and the binary manifest. The output remains unsigned until the separate sign command. Signature verification is performed after signing; runtime and install tests are not claimed by the build report.
