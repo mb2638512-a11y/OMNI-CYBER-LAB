@@ -43,7 +43,14 @@ private val blackBoxChecks = listOf(
 
 @Composable
 fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modifier = Modifier) {
-    val prefs = remember(context, packageName) { context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE) }
+    val registryPrefs = remember(context, packageName) { context.getSharedPreferences("omni_blackbox_registry_$packageName", Context.MODE_PRIVATE) }
+    var activeEngagementId by remember(packageName, activeEngagementId) { mutableStateOf(registryPrefs.getString("active_engagement_id", "default") ?: "default") }
+    var engagementRegistryJson by remember(packageName) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
+    var newEngagementTitle by remember(packageName) { mutableStateOf("Mobile application security assessment") }
+    val prefs = remember(context, packageName, activeEngagementId) {
+        if (activeEngagementId == "default") context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
+        else context.getSharedPreferences("omni_blackbox_${packageName}_$activeEngagementId", Context.MODE_PRIVATE)
+    }
     val scope = rememberCoroutineScope()
     var target by remember(packageName) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
     var clientName by remember(packageName) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
@@ -216,6 +223,32 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }
     }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text("CLIENT ENGAGEMENT MANAGER", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Each engagement has its own local workspace and assessment records. Switching workspaces does not merge their findings or evidence.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(newEngagementTitle, { newEngagementTitle = it }, label = { Text("New engagement title") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedButton(onClick = {
+            val id = "eng_${System.currentTimeMillis()}"
+            val registry = runCatching { JSONArray(engagementRegistryJson) }.getOrElse { JSONArray() }
+            registry.put(JSONObject().put("id", id).put("title", newEngagementTitle.trim().ifBlank { "New security assessment" }).put("createdAt", DateFormat.getDateTimeInstance().format(Date())))
+            engagementRegistryJson = registry.toString()
+            registryPrefs.edit().putString("engagement_registry", engagementRegistryJson).putString("active_engagement_id", id).apply()
+            val nextPrefs = context.getSharedPreferences("omni_blackbox_${packageName}_$id", Context.MODE_PRIVATE)
+            nextPrefs.edit().putString("engagement_name", newEngagementTitle.trim().ifBlank { "New security assessment" }).putString("engagement_status", "PLANNED").putString("target", packageName).apply()
+            activeEngagementId = id
+            status = "New isolated engagement workspace created."
+        }, enabled = newEngagementTitle.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Create separate engagement workspace") }
+        val registryItems = runCatching { JSONArray(engagementRegistryJson) }.getOrElse { JSONArray() }
+        Text("WORKSPACES • ${registryItems.length() + 1}", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = activeEngagementId == "default", onClick = { activeEngagementId = "default"; registryPrefs.edit().putString("active_engagement_id", "default").apply() }, label = { Text("Original workspace") })
+            for (index in 0 until registryItems.length()) {
+                val item = registryItems.optJSONObject(index) ?: continue
+                val id = item.optString("id")
+                FilterChip(selected = activeEngagementId == id, onClick = { activeEngagementId = id; registryPrefs.edit().putString("active_engagement_id", id).apply() }, label = { Text(item.optString("title").take(18)) })
+            }
+        }
+        Text("Active workspace: ${if (activeEngagementId == "default") "Original workspace" else activeEngagementId}", style = MaterialTheme.typography.labelSmall)
+        Divider()
         Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Organize assessments by client and engagement reference. Do not store client secrets or personal contact details here.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(clientName, { clientName = it; prefs.edit().putString("client_name", it).apply() }, label = { Text("Client / organization") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
