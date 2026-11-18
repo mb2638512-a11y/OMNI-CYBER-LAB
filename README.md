@@ -9,6 +9,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 ### Device and installed-app inventory
 - Installed-app inventory with launcher labels/icons, package IDs, version details, search, filters and app workspace navigation.
 - Requested permission inventory and runtime permission grant state where Android exposes it.
+- Universal Access Readiness panel with live Shizuku bridge status, explicit in-app Shizuku permission request, and refresh action. Shizuku diagnostics remain opt-in and read-only; starting the Shizuku service and granting access are user-controlled.
 - Exported Activity, Service, Receiver and Provider inventory, declared component permissions, debuggable state, backup/cleartext manifest flags and signing-certificate SHA-256.
 - App launch and Android App Info settings shortcuts.
 - Storage footprint lookup through Android Usage Access when the user grants it.
