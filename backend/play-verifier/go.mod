@@ -5,4 +5,5 @@ go 1.23
 require (
 	github.com/jackc/pgx/v5 v5.7.5
 	golang.org/x/oauth2 v0.30.0
+	google.golang.org/api v0.229.0
 )
