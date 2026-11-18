@@ -772,6 +772,17 @@ private fun securityTestCategory(title: String): String {
     }
 }
 
+private fun securitySuiteForProfile(suite: List<String>, profile: String): List<String> {
+    val allowed = when (profile) {
+        "QUICK" -> setOf("Build & Integrity", "Network Security", "Permissions & Components")
+        "STANDARD" -> setOf("Build & Integrity", "Network Security", "Permissions & Components", "Code & Package")
+        else -> setOf("Build & Integrity", "Network Security", "Permissions & Components", "Code & Package", "Runtime & Backend", "Configuration")
+    }
+    return suite.chunked(3).filter { block ->
+        val title = block.firstOrNull()?.substringAfter("] ") ?: ""
+        securityTestCategory(title) in allowed
+    }.flatten()
+}
 private fun securityTestPriority(statusLine: String): Int = when {
     statusLine.startsWith("[REVIEW]") -> 0
     statusLine.startsWith("[NOT RUN]") -> 1
@@ -2608,6 +2619,7 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
     var comparison by remember(app.pkg) { mutableStateOf(prefs.getString("comparison_" + app.pkg, "") ?: "") }
     var historyCount by remember(app.pkg) { mutableStateOf(try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 }) }
     var historyExpanded by remember(app.pkg) { mutableStateOf(false) }
+    var selectedProfile by remember(app.pkg) { mutableStateOf(prefs.getString("profile_" + app.pkg, "STANDARD") ?: "STANDARD") }
     val results = remember(report) { report.lines().filter { it.startsWith("[") } }
     val pass = results.count { it.startsWith("[PASS]") }
     val review = results.count { it.startsWith("[REVIEW]") }
@@ -2617,9 +2629,21 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
         Text("ONE-TAP SECURITY TEST ORCHESTRATOR", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
         Text("Non-invasive checks against currently available package metadata and bounded APK inventory. No target code is executed.", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
+        Text("TEST PROFILE", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            listOf("QUICK", "STANDARD", "COMPREHENSIVE").forEach { profile ->
+                val label = when (profile) { "QUICK" -> "Quick"; "STANDARD" -> "Standard"; else -> "Full" }
+                if (selectedProfile == profile) {
+                    Button(onClick = { selectedProfile = profile; prefs.edit().putString("profile_" + app.pkg, profile).apply() }, modifier = Modifier.weight(1f)) { Text(label, fontSize = 9.sp) }
+                } else {
+                    OutlinedButton(onClick = { selectedProfile = profile; prefs.edit().putString("profile_" + app.pkg, profile).apply() }, modifier = Modifier.weight(1f)) { Text(label, fontSize = 9.sp) }
+                }
+            }
+        }
+        Text(when (selectedProfile) { "QUICK" -> "Core identity, build, network and permission checks."; "STANDARD" -> "Quick checks plus APK code and archive inventory."; else -> "All available static checks plus explicit runtime/backend NOT RUN items." }, color = Grey, fontSize = 8.sp)
         Button(onClick = {
             val stamp = System.currentTimeMillis()
-            val suite = buildSecurityTestSuite(app)
+            val suite = securitySuiteForProfile(buildSecurityTestSuite(app), selectedProfile)
             val currentFindings = suite.filter { it.startsWith("[") }
             val historyKey = "history_" + app.pkg
             val history = try { org.json.JSONArray(prefs.getString(historyKey, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
@@ -2652,12 +2676,12 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
                     if (changed.isNotEmpty()) append("\nSeverity changed: " + changed.joinToString { it + " (" + oldMap[it] + " → " + nowMap[it] + ")" })
                     if (added.isEmpty() && disappeared.isEmpty() && changed.isEmpty()) append("\nNo difference in configured rule matches.")
                 }
-            val snapshot = org.json.JSONObject().put("timestamp", stamp).put("findings", org.json.JSONArray(currentFindings))
+            val snapshot = org.json.JSONObject().put("timestamp", stamp).put("profile", selectedProfile).put("findings", org.json.JSONArray(currentFindings))
             history.put(snapshot)
             while (history.length() > 10) history.remove(0)
             historyCount = history.length()
             val body = suite.joinToString("\n")
-            report = "OMNI CYBER LAB • SECURITY TEST RUN\nApp: ${app.name} (${app.pkg})\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\n\n" + comparison + "\n\n" + body
+            report = "OMNI CYBER LAB • SECURITY TEST RUN\nProfile: " + selectedProfile + "\nApp: ${app.name} (${app.pkg})\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\n\n" + comparison + "\n\n" + body
             ranAt = stamp
             prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp)
                 .putString(historyKey, history.toString()).putString("comparison_" + app.pkg, comparison).apply()
