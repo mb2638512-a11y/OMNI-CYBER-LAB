@@ -19,6 +19,9 @@ import java.text.DateFormat
 import java.net.URI
 import java.util.Date
 
+private val localDataChecks = listOf("Sensitive values are not stored in plaintext preferences", "Database files and backups follow app-private access controls", "Logs exclude credentials, tokens, personal data and payment details", "Clipboard use avoids copying secrets or marks sensitive clips appropriately", "Cache and temporary files do not retain sensitive records", "Shared/external storage contains no private app data", "Android backup and data-extraction rules match data sensitivity", "Screenshots and recent-app previews protect sensitive screens", "Local encryption keys use Android Keystore where required", "Logout/account switching clears or isolates user-specific local data")
+private val networkChecks = listOf("All production API endpoints require HTTPS", "Cleartext traffic is disabled or narrowly justified", "TLS certificate validation uses platform trust checks", "No trust-all hostname verifier or permissive trust manager is present", "Sensitive data is not placed in URL query strings", "Authentication material is not logged or exposed in error messages", "Redirect behavior does not downgrade HTTPS or leak credentials", "API responses enforce authorization server-side for each object", "Security headers and cache directives are appropriate for sensitive responses", "Network failures and offline mode fail closed for protected operations")
+
 private val blackBoxChecks = listOf(
     "Public attack-surface mapping: app links, exported components and documented API hosts",
     "Authentication and session lifecycle using client-provided test accounts",
@@ -68,6 +71,14 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var sessionOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
     var sessionEvidence by remember(packageName) { mutableStateOf("") }
     var sessionRecordsJson by remember(packageName) { mutableStateOf(prefs.getString("session_security_records", "[]") ?: "[]") }
+    var localDataCase by remember(packageName) { mutableIntStateOf(0) }
+    var localDataOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
+    var localDataEvidence by remember(packageName) { mutableStateOf("") }
+    var localDataJson by remember(packageName) { mutableStateOf(prefs.getString("local_data_records", "[]") ?: "[]") }
+    var networkCase by remember(packageName) { mutableIntStateOf(0) }
+    var networkOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
+    var networkEvidence by remember(packageName) { mutableStateOf("") }
+    var networkJson by remember(packageName) { mutableStateOf(prefs.getString("network_security_records", "[]") ?: "[]") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
@@ -87,6 +98,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("findings", JSONArray(findingsJson))
                 .put("authorizationMatrix", JSONArray(matrixJson))
                 .put("sessionSecurityTests", JSONArray(sessionRecordsJson))
+                .put("localDataSecurityTests", JSONArray(localDataJson))
+                .put("networkSecurityTests", JSONArray(networkJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -263,6 +276,58 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             if (latestSession != null) Text("Latest: ${latestSession.optString("operatorOutcome")} • ${latestSession.optString("testCase")}", style = MaterialTheme.typography.bodySmall)
         }
         Text("This module records manual observations only. It does not capture, replay, revoke or modify authentication tokens.", style = MaterialTheme.typography.labelSmall)
+        Divider()
+        Text("LOCAL DATA SECURITY LAB", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Manual checks for the client-owned app: local files, preferences, databases, logs, backups and privacy exposure. Do not copy secrets into notes.", style = MaterialTheme.typography.bodySmall)
+        Text("Check ${localDataCase + 1} of ${localDataChecks.size}", style = MaterialTheme.typography.labelMedium)
+        Text(localDataChecks[localDataCase], style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { localDataCase = (localDataCase - 1).coerceAtLeast(0); localDataOutcome = "NOT TESTED"; localDataEvidence = "" }, enabled = localDataCase > 0) { Text("Previous") }
+            OutlinedButton(onClick = { localDataCase = (localDataCase + 1).coerceAtMost(localDataChecks.lastIndex); localDataOutcome = "NOT TESTED"; localDataEvidence = "" }, enabled = localDataCase < localDataChecks.lastIndex) { Text("Next") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("NOT TESTED", "PASS", "FAIL", "NEEDS REVIEW").forEach { value -> FilterChip(selected = localDataOutcome == value, onClick = { localDataOutcome = value }, label = { Text(value) }) } }
+        OutlinedTextField(localDataEvidence, { localDataEvidence = it }, label = { Text("Redacted evidence reference / notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val arr = runCatching { JSONArray(localDataJson) }.getOrElse { JSONArray() }
+            arr.put(JSONObject().put("id", "LD-${System.currentTimeMillis()}").put("testCase", localDataChecks[localDataCase]).put("operatorOutcome", localDataOutcome).put("evidenceReference", localDataEvidence.trim()).put("recordedAt", DateFormat.getDateTimeInstance().format(Date())).put("status", "OPERATOR RECORDED • NOT INDEPENDENTLY VERIFIED"))
+            val bounded = JSONArray()
+            for (index in (arr.length() - 100).coerceAtLeast(0) until arr.length()) bounded.put(arr.getJSONObject(index))
+            localDataJson = bounded.toString()
+            prefs.edit().putString("local_data_records", localDataJson).apply()
+            localDataEvidence = ""
+            status = "LOCAL DATA SECURITY LAB observation saved locally."
+        }, enabled = authorized && localDataOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save local data security lab result") }
+        val records = runCatching { JSONArray(localDataJson) }.getOrElse { JSONArray() }
+        val passCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val failCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val reviewCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Saved: ${records.length()} • $passCount PASS • $failCount FAIL • $reviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
+        Divider()
+        Text("NETWORK SECURITY REVIEW", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Manual review of approved app/API traffic and configuration. No traffic interception, certificate bypass or automatic fuzzing is performed.", style = MaterialTheme.typography.bodySmall)
+        Text("Check ${networkCase + 1} of ${networkChecks.size}", style = MaterialTheme.typography.labelMedium)
+        Text(networkChecks[networkCase], style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { networkCase = (networkCase - 1).coerceAtLeast(0); networkOutcome = "NOT TESTED"; networkEvidence = "" }, enabled = networkCase > 0) { Text("Previous") }
+            OutlinedButton(onClick = { networkCase = (networkCase + 1).coerceAtMost(networkChecks.lastIndex); networkOutcome = "NOT TESTED"; networkEvidence = "" }, enabled = networkCase < networkChecks.lastIndex) { Text("Next") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("NOT TESTED", "PASS", "FAIL", "NEEDS REVIEW").forEach { value -> FilterChip(selected = networkOutcome == value, onClick = { networkOutcome = value }, label = { Text(value) }) } }
+        OutlinedTextField(networkEvidence, { networkEvidence = it }, label = { Text("Redacted evidence reference / notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val arr = runCatching { JSONArray(networkJson) }.getOrElse { JSONArray() }
+            arr.put(JSONObject().put("id", "NET-${System.currentTimeMillis()}").put("testCase", networkChecks[networkCase]).put("operatorOutcome", networkOutcome).put("evidenceReference", networkEvidence.trim()).put("recordedAt", DateFormat.getDateTimeInstance().format(Date())).put("status", "OPERATOR RECORDED • NOT INDEPENDENTLY VERIFIED"))
+            val bounded = JSONArray()
+            for (index in (arr.length() - 100).coerceAtLeast(0) until arr.length()) bounded.put(arr.getJSONObject(index))
+            networkJson = bounded.toString()
+            prefs.edit().putString("network_security_records", networkJson).apply()
+            networkEvidence = ""
+            status = "NETWORK SECURITY REVIEW observation saved locally."
+        }, enabled = authorized && networkOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save network security review result") }
+        val records = runCatching { JSONArray(networkJson) }.getOrElse { JSONArray() }
+        val passCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "PASS" }
+        val failCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "FAIL" }
+        val reviewCount = (0 until records.length()).count { records.optJSONObject(it)?.optString("operatorOutcome") == "NEEDS REVIEW" }
+        Text("Saved: ${records.length()} • $passCount PASS • $failCount FAIL • $reviewCount NEEDS REVIEW", style = MaterialTheme.typography.labelSmall)
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
