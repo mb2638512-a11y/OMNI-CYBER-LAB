@@ -188,4 +188,4 @@ This repository contains source code. A build is considered successful only when
 - The client portfolio overview aggregates local counts across workspaces without merging their records.
 - Client PDF reports include a confidential-review label, client/engagement reference, executive summary, coverage, severity counts, finding details and limitations.
 - Workspace backup files use PBKDF2-HMAC-SHA256 (250,000 iterations) and AES-256-GCM with a user passphrase. Restore validates app package and workspace identity and resets authorization to false so the operator must reconfirm scope.
-- Workspace preference backups do not include evidence file contents. Evidence attachments remain in the separate encrypted vault and must be exported individually. Backups are local files; no cloud sync is provided.
+- Workspace backup payloads include evidence contents inside the outer passphrase-encrypted file; on restore, attachments are re-encrypted under a fresh per-workspace Android Keystore key. Backups are local files; no cloud sync is provided.
