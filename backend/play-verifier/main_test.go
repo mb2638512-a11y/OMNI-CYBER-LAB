@@ -99,3 +99,39 @@ func TestSubscriptionWrongProductRejected(t *testing.T) {
 	})
 	if err == nil { t.Fatal("expected subscription product mismatch rejection") }
 }
+
+
+func TestAuthorizationRequiresExactBearerScheme(t *testing.T) {
+	s := &server{apiKey: []byte("test-secret-key")}
+	cases := []struct {
+		name, header string
+		want bool
+	}{
+		{"valid bearer", "Bearer test-secret-key", true},
+		{"missing scheme", "test-secret-key", false},
+		{"wrong key", "Bearer wrong-secret", false},
+		{"empty bearer", "Bearer ", false},
+		{"leading whitespace", " Bearer test-secret-key", false},
+		{"trailing whitespace", "Bearer test-secret-key ", false},
+		{"embedded whitespace", "Bearer test secret key", false},
+		{"wrong scheme case", "bearer test-secret-key", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _ := http.NewRequest(http.MethodPost, "/v1/play/verify", nil)
+			r.Header.Set("Authorization", tc.header)
+			if got := s.authorized(r); got != tc.want {
+				t.Fatalf("authorized()=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAuthorizationFailsClosedWithoutConfiguredKey(t *testing.T) {
+	s := &server{}
+	r, _ := http.NewRequest(http.MethodPost, "/v1/play/verify", nil)
+	r.Header.Set("Authorization", "Bearer any-value")
+	if s.authorized(r) {
+		t.Fatal("authorization must fail when server key is not configured")
+	}
+}
