@@ -2088,6 +2088,9 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                                 }
                                 Text("Comparison is static metadata only. It does not run either APK or prove that one build is safe.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
                             }
+                            if (current.title == "Security overview") {
+                                SecurityFindingsDashboard(context, app)
+                            }
                             if (current.title == "Automated static security checks") {
                                 val reportLines = featureResults.ifEmpty { runStructuredStaticChecks(app) }
                                 Text("RULE RESULTS • ${reportLines.count { it.startsWith("[") }}", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
@@ -2355,6 +2358,81 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
         }
     }
 }
+
+
+@Composable
+private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
+    val findings = remember(app) { runStructuredStaticChecks(app).filter { it.startsWith("[") } }
+    val high = findings.count { it.startsWith("[HIGH]") }
+    val medium = findings.count { it.startsWith("[MEDIUM]") }
+    val review = findings.count { it.startsWith("[REVIEW]") }
+    val info = findings.count { it.startsWith("[INFO]") }
+    val prefs = remember(app.pkg) { context.getSharedPreferences("runtime_test_sessions", Context.MODE_PRIVATE) }
+    val savedChecks = prefs.getString("checks_" + app.pkg, "") ?: ""
+    val totalSteps = 10
+    val completedSteps = (0 until totalSteps).count { savedChecks.getOrNull(it) == '1' }
+    val evidence = prefs.getString("evidence_" + app.pkg, "") ?: ""
+    val timeline = prefs.getString("timeline_" + app.pkg, "") ?: ""
+    val reviewedKey = "reviewed_findings_" + app.pkg
+    val reviewed = remember(app.pkg) { mutableStateListOf<String>().apply {
+        addAll((prefs.getStringSet(reviewedKey, emptySet()) ?: emptySet()).toList())
+    } }
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        Text("SECURITY FINDINGS DASHBOARD", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Text(app.name + " • " + app.pkg, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            AuditCard("HIGH", listOf("Findings" to high.toString()))
+            AuditCard("MEDIUM", listOf("Findings" to medium.toString()))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            AuditCard("REVIEW", listOf("Findings" to review.toString()))
+            AuditCard("INFO", listOf("Findings" to info.toString()))
+        }
+        Text("TEST COVERAGE • $completedSteps / $totalSteps manual steps", color = Blue, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
+        LinearProgressIndicator(progress = { completedSteps.toFloat() / totalSteps }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp), color = Blue)
+        Text("Evidence: " + if (evidence.isBlank()) "Not attached" else "Attached locally • " + evidence.length + " characters", color = if (evidence.isBlank()) Orange else Green, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+        Text("Timeline: " + if (timeline.isBlank()) "No events recorded" else "Available • " + timeline.lines().size + " events", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("FINDINGS & REVIEW TRACKER", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
+        findings.forEach { finding ->
+            val title = finding.substringAfter("] ").ifBlank { finding }
+            val isReviewed = reviewed.contains(title)
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Text(finding, color = when { finding.startsWith("[HIGH]") -> Red; finding.startsWith("[MEDIUM]") || finding.startsWith("[REVIEW]") -> Orange; else -> Blue }, fontSize = 10.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (isReviewed) "Manually reviewed" else "Awaiting review", color = if (isReviewed) Green else Grey, fontSize = 9.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        if (isReviewed) reviewed.remove(title) else reviewed.add(title)
+                        prefs.edit().putStringSet(reviewedKey, reviewed.toSet()).apply()
+                    }) { Text(if (isReviewed) "Undo review" else "Mark reviewed") }
+                }
+            }
+        }
+        Button(onClick = {
+            val json = org.json.JSONObject().apply {
+                put("reportType", "OMNI CYBER LAB security findings")
+                put("packageName", app.pkg)
+                put("appName", app.name)
+                put("version", app.version)
+                put("generatedAt", java.text.DateFormat.getDateTimeInstance().format(java.util.Date()))
+                put("severityCounts", org.json.JSONObject().put("high", high).put("medium", medium).put("review", review).put("info", info))
+                put("manualTestCoverage", org.json.JSONObject().put("completed", completedSteps).put("total", totalSteps))
+                put("evidenceAttached", evidence.isNotBlank())
+                put("timelineEvents", if (timeline.isBlank()) org.json.JSONArray() else org.json.JSONArray(timeline.lines()))
+                put("reviewedFindings", org.json.JSONArray(reviewed.toList()))
+                put("findings", org.json.JSONArray(findings))
+                put("limitations", "Static rules and manually recorded runtime checks only; not a vulnerability score, malware verdict or formal penetration test.")
+            }.toString(2)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_SUBJECT, "OMNI CYBER LAB findings • " + app.name)
+                putExtra(Intent.EXTRA_TEXT, json)
+            }
+            context.startActivity(Intent.createChooser(send, "Export findings JSON"))
+        }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("Export structured JSON report") }
+        Text("Severity counts are rule matches, not confirmed vulnerabilities. Test coverage reflects manually checked steps; review status is a user-entered workflow marker, not proof of remediation.", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
 
 @Composable
 private fun EndpointAuditPanel() {
