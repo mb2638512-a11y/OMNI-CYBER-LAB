@@ -55,6 +55,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     }
     var evidenceJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("secure_evidence_index", "[]") ?: "[]") }
     var pendingEvidenceExportId by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var backupPassphrase by remember(packageName, activeEngagementId) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var target by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("target", packageName) ?: packageName) }
     var clientName by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("client_name", "") ?: "") }
@@ -73,6 +74,35 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var notes by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("notes", "") ?: "") }
     var checked by remember(packageName, activeEngagementId) { mutableStateOf(blackBoxChecks.indices.filter { prefs.getBoolean("check_$it", false) }.toSet()) }
     var status by remember { mutableStateOf("Define the client scope before starting an engagement.") }
+    val workspaceBackupExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            try {
+                val secret = backupPassphrase.toCharArray()
+                val encrypted = withContext(Dispatchers.IO) { SecureWorkspaceBackup.encrypt(SecureWorkspaceBackup.snapshot(context, packageName, activeEngagementId), secret) }
+                context.contentResolver.openOutputStream(uri)?.use { it.write(encrypted) } ?: error("Cannot open backup destination.")
+                backupPassphrase = ""
+                status = "Encrypted workspace backup exported. Evidence attachments are stored separately in the evidence vault."
+            } catch (e: Exception) { status = "Backup export failed: ${e.message}" }
+        }
+    }
+    val workspaceBackupImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            try {
+                val secret = backupPassphrase.toCharArray()
+                val payload = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                        val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192); var total = 0
+                        while (true) { val count = input.read(buffer); if (count < 0) break; total += count; require(total <= 20 * 1024 * 1024) { "Backup file exceeds 20 MB." }; output.write(buffer, 0, count) }
+                        output.toByteArray()
+                    } ?: error("Cannot read selected backup.")
+                    SecureWorkspaceBackup.decrypt(bytes, secret)
+                }
+                withContext(Dispatchers.IO) { SecureWorkspaceBackup.restore(context, packageName, activeEngagementId, payload) }
+                backupPassphrase = ""
+                status = "Workspace backup restored. Reopen this workspace to refresh its displayed records. Evidence attachments were not part of this backup."
+            } catch (e: Exception) { status = "Backup restore failed: ${e.message}" }
+        }
+    }
     val evidenceImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) scope.launch {
             try {
@@ -339,6 +369,14 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             }
         }
         if (evidenceRecords.length() == 0) Text("No encrypted evidence attachments yet.", style = MaterialTheme.typography.bodySmall)
+        Divider()
+        Text("ENCRYPTED WORKSPACE BACKUP", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+        Text("Portable workspace backup encrypted with a passphrase using PBKDF2-HMAC-SHA256 and AES-256-GCM. Use at least 12 characters. Restore only accepts a backup for this app package and the currently selected workspace. Evidence files are excluded and remain in the separate vault.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(backupPassphrase, { backupPassphrase = it }, label = { Text("Backup passphrase (12+ characters)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { workspaceBackupExport.launch("omni-workspace-backup.ocb") }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Export encrypted") }
+            OutlinedButton(onClick = { workspaceBackupImport.launch(arrayOf("application/octet-stream", "*/*")) }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Restore backup") }
+        }
         Divider()
         Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Organize assessments by client and engagement reference. Do not store client secrets or personal contact details here.", style = MaterialTheme.typography.bodySmall)
