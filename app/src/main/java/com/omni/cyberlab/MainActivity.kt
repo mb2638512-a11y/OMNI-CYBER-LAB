@@ -1450,6 +1450,7 @@ private fun runFeatureAudit(app: AppRow, feature: WorkspaceFeature): List<String
         "Billing & SDK inventory" -> app.archiveInventory.filter { it.contains("SDK marker") }.ifEmpty { listOf("No configured SDK marker matched the sampled DEX strings. This does not prove the SDK is absent.") }
         "Rebuild APK from Smali" -> listOf("Import the ZIP exported by Smali DEX disassembly after editing its .smali files.", "Matching smali-N folders are assembled into the original DEX entries; old APK signature files are removed. The result is unsigned and must be signed with your own key.")
         "Advanced APK modification lab" -> listOf("Edit bounded UTF-8 text entries under assets/ and res/raw/ in an APK you own or are authorized to modify.", "The output is unsigned and old APK signature blocks are removed; sign with your own key and validate before installation.", "Compiled resources, binary manifest, DEX and native libraries are not edited by this text patcher.")
+        "Black-box penetration test" -> listOf("Start with limited client-provided information and map the app attack surface without assuming internal architecture.", "Use client-owned test accounts and scoped hosts to assess authentication, authorization, input validation, deep links, local data, TLS, billing, rate limits, tamper resistance and detection.", "The engagement workspace records scope, exclusions, manual coverage and evidence notes. It does not autonomously exploit targets.")
         "License / IAP emulation lab" -> listOf("Run local mock purchase and license-state transitions for your own application.", "Mock events do not contact Google Play, grant real entitlements, or bypass third-party licensing.")
         "Debug & exported components" -> buildList {
             add("Debuggable flag: " + app.debug + ".")
@@ -1819,6 +1820,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             WorkspaceCategory("Security audit", "App integrity and risk indicators", listOf(
                 WorkspaceFeature("Automated static security checks", "Run structured metadata and bounded archive rules with severity, evidence and remediation notes.", "READY • STATIC RULES", true),
                 WorkspaceFeature("Security test orchestrator", "Run a consolidated, non-invasive package security suite and save a timestamped result snapshot.", "READY • ONE-TAP SUITE", true),
+                WorkspaceFeature("Black-box penetration test", "Run a blind, client-scoped manual assessment plan across app, API, authentication, billing, integrity and detection controls.", "READY • ENGAGEMENT WORKSPACE", true),
                 WorkspaceFeature("Security overview", "Review the metadata checks and findings for this app.", app.status, true),
                 WorkspaceFeature("Signer & integrity", "Inspect the signing certificate fingerprint and compare it with a trusted release fingerprint.", if (app.signer == "Unavailable") "UNAVAILABLE" else "READY • FINGERPRINT", true),
                 WorkspaceFeature("DEX & native libraries", "Inventory DEX/native files and scan bounded DEX strings for URLs, credentials and behavior markers.", if (app.archiveInventory.isEmpty()) "NOT AVAILABLE" else "ARCHIVE + DEX TRIAGE", app.archiveInventory.isNotEmpty()),
@@ -1948,6 +1950,7 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
                             Status(if (current.state == "AVAILABLE" || current.state == "CHECKED" || current.state == "LIVE CHECK") "CHECKED" else "REVIEW")
                             Text("STATUS: ${current.state}", color = Green, fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                            if (current.title == "Black-box penetration test") BlackBoxEngagementLab(context, app.pkg, modifier = Modifier.padding(top = 12.dp))
                             if (current.title == "Advanced APK modification lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 0, modifier = Modifier.padding(top = 12.dp))
                             if (current.title == "License / IAP emulation lab") AdvancedModificationBillingLabs(context, app.pkg, app.apkPath, initialTab = 1, modifier = Modifier.padding(top = 12.dp))
                             if (featureResults.isNotEmpty()) {
