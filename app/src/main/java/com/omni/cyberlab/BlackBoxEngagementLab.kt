@@ -47,6 +47,8 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var activeEngagementId by remember(packageName) { mutableStateOf(registryPrefs.getString("active_engagement_id", "default") ?: "default") }
     var engagementRegistryJson by remember(packageName) { mutableStateOf(registryPrefs.getString("engagement_registry", "[]") ?: "[]") }
     var newEngagementTitle by remember(packageName) { mutableStateOf("Mobile application security assessment") }
+    var renameWorkspaceTitle by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var showDeleteWorkspaceDialog by remember(packageName) { mutableStateOf(false) }
     val prefs = remember(context, packageName, activeEngagementId) {
         if (activeEngagementId == "default") context.getSharedPreferences("omni_blackbox_$packageName", Context.MODE_PRIVATE)
         else context.getSharedPreferences("omni_blackbox_${packageName}_$activeEngagementId", Context.MODE_PRIVATE)
@@ -248,6 +250,40 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             }
         }
         Text("Active workspace: ${if (activeEngagementId == "default") "Original workspace" else activeEngagementId}", style = MaterialTheme.typography.labelSmall)
+        if (activeEngagementId != "default") {
+            OutlinedTextField(renameWorkspaceTitle, { renameWorkspaceTitle = it }, label = { Text("Rename active workspace") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    val updated = runCatching { JSONArray(engagementRegistryJson) }.getOrElse { JSONArray() }
+                    for (i in 0 until updated.length()) {
+                        val item = updated.optJSONObject(i) ?: continue
+                        if (item.optString("id") == activeEngagementId) item.put("title", renameWorkspaceTitle.trim())
+                    }
+                    engagementRegistryJson = updated.toString()
+                    registryPrefs.edit().putString("engagement_registry", engagementRegistryJson).apply()
+                    prefs.edit().putString("engagement_name", renameWorkspaceTitle.trim()).apply()
+                    engagementName = renameWorkspaceTitle.trim()
+                    status = "Workspace renamed."
+                }, enabled = renameWorkspaceTitle.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Save name") }
+                OutlinedButton(onClick = { showDeleteWorkspaceDialog = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete workspace") }
+            }
+        }
+        if (showDeleteWorkspaceDialog) {
+            AlertDialog(onDismissRequest = { showDeleteWorkspaceDialog = false }, title = { Text("Delete this workspace?") },
+                text = { Text("This permanently clears this engagement workspace and its locally stored assessment records. Export any report you need first. The Original workspace is not affected.") },
+                confirmButton = { TextButton(onClick = {
+                    prefs.edit().clear().apply()
+                    val updated = runCatching { JSONArray(engagementRegistryJson) }.getOrElse { JSONArray() }
+                    val kept = JSONArray()
+                    for (i in 0 until updated.length()) { val item = updated.optJSONObject(i) ?: continue; if (item.optString("id") != activeEngagementId) kept.put(item) }
+                    engagementRegistryJson = kept.toString()
+                    registryPrefs.edit().putString("engagement_registry", engagementRegistryJson).putString("active_engagement_id", "default").apply()
+                    activeEngagementId = "default"
+                    showDeleteWorkspaceDialog = false
+                    status = "Workspace deleted. Original workspace selected."
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { showDeleteWorkspaceDialog = false }) { Text("Cancel") } })
+        }
         Divider()
         Text("CLIENT ENGAGEMENT WORKSPACE", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Organize assessments by client and engagement reference. Do not store client secrets or personal contact details here.", style = MaterialTheme.typography.bodySmall)
