@@ -2530,17 +2530,17 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
                 else buildString {
                     append("Compared with previous run: ")
                     append("New signals ${added.size} • No longer matched ${disappeared.size} • Severity changes ${changed.size}")
-                    if (added.isNotEmpty()) append("\\nNew: " + added.joinToString())
-                    if (disappeared.isNotEmpty()) append("\\nNo longer matched (not proof of remediation): " + disappeared.joinToString())
-                    if (changed.isNotEmpty()) append("\\nSeverity changed: " + changed.joinToString { it + " (" + oldMap[it] + " → " + nowMap[it] + ")" })
-                    if (added.isEmpty() && disappeared.isEmpty() && changed.isEmpty()) append("\\nNo difference in configured rule matches.")
+                    if (added.isNotEmpty()) append("\nNew: " + added.joinToString())
+                    if (disappeared.isNotEmpty()) append("\nNo longer matched (not proof of remediation): " + disappeared.joinToString())
+                    if (changed.isNotEmpty()) append("\nSeverity changed: " + changed.joinToString { it + " (" + oldMap[it] + " → " + nowMap[it] + ")" })
+                    if (added.isEmpty() && disappeared.isEmpty() && changed.isEmpty()) append("\nNo difference in configured rule matches.")
                 }
             val snapshot = org.json.JSONObject().put("timestamp", stamp).put("findings", org.json.JSONArray(currentFindings))
             history.put(snapshot)
             while (history.length() > 10) history.remove(0)
             historyCount = history.length()
-            val body = suite.joinToString("\\n")
-            report = "OMNI CYBER LAB • SECURITY TEST RUN\\nApp: ${app.name} (${app.pkg})\\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\\n\\n" + comparison + "\\n\\n" + body
+            val body = suite.joinToString("\n")
+            report = "OMNI CYBER LAB • SECURITY TEST RUN\nApp: ${app.name} (${app.pkg})\nRun time: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(stamp)) + "\n\n" + comparison + "\n\n" + body
             ranAt = stamp
             prefs.edit().putString("report_" + app.pkg, report).putLong("ran_at_" + app.pkg, stamp)
                 .putString(historyKey, history.toString()).putString("comparison_" + app.pkg, comparison).apply()
