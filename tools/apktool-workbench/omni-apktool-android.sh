@@ -25,7 +25,7 @@ decode(){
  local input="$1"
  [ -f "$input" ]||{ echo "Source APK not found: $input";exit 2; }
  need_cmd apktool;need_cmd aapt2
- local work="\${input%.apk}-work"
+ local work="${input%.apk}-work"
  [ ! -e "$work" ]||{ echo "Workspace exists; choose another path.";exit 2; }
  local source_hash;source_hash="$(hash_file "$input")"
  apktool d -f --no-src -o "$work" "$input"
@@ -46,7 +46,7 @@ build(){
  local expected actual;expected="$(cat "$work/.omni/source-sha256.txt")";actual="$(hash_file "$source")"
  [ "$actual" = "$expected" ]||{ echo "FAIL • source APK hash changed since decode.";exit 3; }
  need_cmd apktool;need_cmd aapt2;need_cmd zipalign;need_cmd python
- local out="\${work}-rebuilt-unsigned.apk";local aligned="\${work}-rebuilt-aligned-unsigned.apk"
+ local out="${work}-rebuilt-unsigned.apk";local aligned="${work}-rebuilt-aligned-unsigned.apk"
  [ ! -e "$out" ]&&[ ! -e "$aligned" ]||{ echo "Output exists; refusing overwrite.";exit 2; }
  apktool b --use-aapt2 -a "$(command -v aapt2)" "$work" -o "$out"
  zipalign -p -f 4 "$out" "$aligned"
@@ -80,14 +80,14 @@ sign_apk(){
  local input="$1" key="$2" alias="$3"
  [ -f "$input" ]&&[ -f "$key" ]||{ echo "APK or keystore missing.";exit 2; }
  need_cmd apksigner
- local signed="\${input%.apk}-signed.apk"
+ local signed="${input%.apk}-signed.apk"
  [ ! -e "$signed" ]||{ echo "Signed output exists; refusing overwrite.";exit 2; }
  echo "Enter passwords interactively; never put keystore secrets in scripts or Git."
  apksigner sign --ks "$key" --ks-key-alias "$alias" --out "$signed" "$input"
  apksigner verify --verbose "$signed"
  echo "SIGNATURE PASS • $signed"
 }
-case "\${1:-}" in
+case "${1:-}" in
  setup) setup;;
  decode) [ $# -eq 2 ]||{ usage;exit 2; };check_arch;decode "$2";;
  build) [ $# -eq 2 ]||{ usage;exit 2; };check_arch;build "$2";;
