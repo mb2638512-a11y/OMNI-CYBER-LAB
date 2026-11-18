@@ -1,4 +1,4 @@
-# NEXUS CYBER LAB
+# LUCKY PATCHES
 
 Native Android defensive security-audit companion built with Kotlin and Jetpack Compose. Designed for local inspection of installed apps and APK files, with optional Shizuku-assisted read-only diagnostics.
 
@@ -42,7 +42,7 @@ Native Android defensive security-audit companion built with Kotlin and Jetpack 
 ### Advanced owner-authorized modification and billing labs
 
 - **Advanced APK modification lab:** scans a bounded set of small text-like entries under `assets/` and `res/raw/`, lets the owner edit a selected entry, rebuilds the APK ZIP while preserving unchanged entries, removes stale APK signature blocks, calculates an output SHA-256 fingerprint, and exports an unsigned modified APK. The current text patcher has limits of 100 MB source APK, 256 KB edited entry, 8,000 ZIP entries, 30 MB per copied entry and 150 MB expanded output. Sign the output with your own keystore and validate it before installing.
-- The bounded in-app text patcher does not edit compiled DEX, native libraries, binary manifests or arbitrary third-party billing/license logic. Full Apktool decode/edit/rebuild is a separate owner-authorized workbench available on Windows and Android ARM64 through Termux. The Termux companion performs full Apktool decode to Smali, rebuilds Smali into DEX alongside resources and manifest, zipaligns the unsigned output and emits JSON + TXT reports. It verifies the source APK hash and refuses to overwrite source/output files. The companion runs alongside NEXUS CYBER LAB on the same phone, not inside the app process. Signature, install and runtime validation remain separate steps.
+- The bounded in-app text patcher does not edit compiled DEX, native libraries, binary manifests or arbitrary third-party billing/license logic. Full Apktool decode/edit/rebuild is a separate owner-authorized workbench available on Windows and Android ARM64 through Termux. The Termux companion performs full Apktool decode to Smali, rebuilds Smali into DEX alongside resources and manifest, zipaligns the unsigned output and emits JSON + TXT reports. It verifies the source APK hash and refuses to overwrite source/output files. The companion runs alongside LUCKY PATCHES on the same phone, not inside the app process. Signature, install and runtime validation remain separate steps.
 - **Client-side IAP emulation lab:** provides a locally persisted mock state machine for an owner-defined product ID, including purchased, pending, cancelled, expired, refunded/revoked, grace period, account hold, invalid license and restore events. It records a timestamped local event log per package. These are simulated QA events only; no Play Store request, receipt, payment, real entitlement or backend call is made.
 - **Owner ad-removal configuration QA:** a new local test suite checks an owner's staging-only ad-disable flag, consent preservation and rewarded-ad callback spoof resistance. It tests the safe owner-side configuration path; it does not strip ad SDK calls or remove ads from arbitrary third-party APKs.
 - **License-check bypass-resistance QA:** local attacker-perspective cases test client license-flag tampering and expiry/clock rollback resistance, comparing weak client-only behavior with backend-authoritative controls. This is not a license cracker and does not generate keys or patch third-party license checks.
@@ -78,7 +78,7 @@ Open the project in Android Studio with JDK 17, sync Gradle, connect a device an
 1. Install Shizuku from https://shizuku.rikka.app/.
 2. Enable Developer options and Wireless debugging.
 3. Follow Shizuku's pairing instructions and start its service.
-4. Open NEXUS CYBER LAB, tap Grant / Check and approve permission.
+4. Open LUCKY PATCHES, tap Grant / Check and approve permission.
 5. Run an explicitly authorized diagnostic.
 
 On non-rooted phones Shizuku relies on Wireless Debugging/ADB authorization. Shizuku shell privileges are not equivalent to root and do not grant access to other apps' private data directories.
