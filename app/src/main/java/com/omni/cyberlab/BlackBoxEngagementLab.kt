@@ -63,6 +63,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var matrixObserved by remember(packageName) { mutableStateOf("NOT TESTED") }
     var matrixEvidence by remember(packageName) { mutableStateOf("") }
     var matrixJson by remember(packageName) { mutableStateOf(prefs.getString("authorization_matrix", "[]") ?: "[]") }
+    val sessionChecks = listOf("Token storage: secrets not exposed in logs, clipboard or world-readable files", "Logout invalidation: old session no longer accepted by client backend", "Session expiry: expired access token is rejected", "Refresh lifecycle: refresh token rotation and expiry behavior", "Refresh replay: previously rotated token is rejected", "Revocation: password reset or account disable invalidates sessions as designed", "Account switching: prior account data is not shown after switching users", "Concurrent sessions: device/session management follows product policy", "Authentication errors: responses do not disclose sensitive account details", "Session persistence: app restart behavior matches documented policy", "Sensitive screens: app switcher/background exposure is controlled", "Re-authentication: sensitive actions require fresh authentication where required")
+    var sessionCase by remember(packageName) { mutableStateOf(0) }
+    var sessionOutcome by remember(packageName) { mutableStateOf("NOT TESTED") }
+    var sessionEvidence by remember(packageName) { mutableStateOf("") }
+    var sessionRecordsJson by remember(packageName) { mutableStateOf(prefs.getString("session_security_records", "[]") ?: "[]") }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
             val payload = JSONObject()
@@ -81,6 +86,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 .put("endpointProbeHistory", JSONArray(probeHistoryJson))
                 .put("findings", JSONArray(findingsJson))
                 .put("authorizationMatrix", JSONArray(matrixJson))
+                .put("sessionSecurityTests", JSONArray(sessionRecordsJson))
                 .put("limitations", "This is a scoped manual test record, not proof of exploitability or a passed security assessment.")
             scope.launch {
                 try { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload.toString(2)) } ?: error("Cannot open export destination."); status = "Engagement plan exported." }
@@ -221,6 +227,36 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             if (last != null) Text("Latest: ${last.optString("actorRole")} • ${last.optString("expectedAccess")} → ${last.optString("observedResult")} • ${last.optString("status")}", style = MaterialTheme.typography.bodySmall)
             Text("Expectation mismatch is a triage signal only; confirm with repeatable evidence and server-side context.", style = MaterialTheme.typography.labelSmall)
         }
+        Divider()
+        Text("AUTHENTICATION & SESSION SECURITY LAB", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        Text("Manual checks for client-owned test accounts. Do not paste real tokens, passwords or secrets into evidence notes; use redacted references only.", style = MaterialTheme.typography.bodySmall)
+        Text("Test case ${sessionCase + 1} of ${sessionChecks.size}", style = MaterialTheme.typography.labelMedium)
+        Text(sessionChecks[sessionCase], style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { sessionCase = (sessionCase - 1).coerceAtLeast(0); sessionOutcome = "NOT TESTED"; sessionEvidence = "" }, enabled = sessionCase > 0) { Text("Previous") }
+            OutlinedButton(onClick = { sessionCase = (sessionCase + 1).coerceAtMost(sessionChecks.lastIndex); sessionOutcome = "NOT TESTED"; sessionEvidence = "" }, enabled = sessionCase < sessionChecks.lastIndex) { Text("Next") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("NOT TESTED", "PASS", "FAIL", "NEEDS REVIEW").forEach { value -> FilterChip(selected = sessionOutcome == value, onClick = { sessionOutcome = value }, label = { Text(value) }) }
+        }
+        OutlinedTextField(sessionEvidence, { sessionEvidence = it }, label = { Text("Redacted evidence reference / notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        Button(onClick = {
+            val records = runCatching { JSONArray(sessionRecordsJson) }.getOrElse { JSONArray() }
+            records.put(JSONObject().put("id", "SS-${System.currentTimeMillis()}").put("testCase", sessionChecks[sessionCase]).put("operatorOutcome", sessionOutcome).put("evidenceReference", sessionEvidence.trim()).put("recordedAt", DateFormat.getDateTimeInstance().format(Date())).put("status", "OPERATOR RECORDED • NOT INDEPENDENTLY VERIFIED"))
+            val bounded = JSONArray()
+            for (index in (records.length() - 100).coerceAtLeast(0) until records.length()) bounded.put(records.getJSONObject(index))
+            sessionRecordsJson = bounded.toString()
+            prefs.edit().putString("session_security_records", sessionRecordsJson).apply()
+            sessionEvidence = ""
+            status = "Session security observation saved locally. Verify with repeatable client-approved tests."
+        }, enabled = authorized && sessionOutcome != "NOT TESTED", modifier = Modifier.fillMaxWidth()) { Text("Save session test result") }
+        val sessionRecords = runCatching { JSONArray(sessionRecordsJson) }.getOrElse { JSONArray() }
+        Text("Saved session observations: ${sessionRecords.length()}", style = MaterialTheme.typography.bodyMedium)
+        if (sessionRecords.length() > 0) {
+            val latestSession = sessionRecords.optJSONObject(sessionRecords.length() - 1)
+            if (latestSession != null) Text("Latest: ${latestSession.optString("operatorOutcome")} • ${latestSession.optString("testCase")}", style = MaterialTheme.typography.bodySmall)
+        }
+        Text("This module records manual observations only. It does not capture, replay, revoke or modify authentication tokens.", style = MaterialTheme.typography.labelSmall)
         Text("STRUCTURED VULNERABILITY FINDINGS", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Record only findings you have reproduced or have evidence to support. A suspected issue must be labelled as unconfirmed in its title or notes.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(findingTitle, { findingTitle = it }, label = { Text("Finding title") }, modifier = Modifier.fillMaxWidth())
