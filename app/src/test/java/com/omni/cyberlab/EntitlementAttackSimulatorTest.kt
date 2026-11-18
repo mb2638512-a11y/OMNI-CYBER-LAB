@@ -10,9 +10,9 @@ class EntitlementAttackSimulatorTest {
     @Test
     fun suiteContainsAllExpectedAttackScenarios() {
         val results = EntitlementAttackSimulator.runSuite()
-        assertEquals(8, results.size)
+        assertEquals(12, results.size)
         assertEquals(
-            setOf("fake_receipt", "pending", "replay", "account_swap", "wrong_sku", "local_flag", "negative_spend", "client_amount"),
+            setOf("fake_receipt", "pending", "replay", "account_swap", "wrong_sku", "local_flag", "negative_spend", "client_amount", "expired_vip", "refunded", "token_product_swap", "zero_spend"),
             results.map { it.id }.toSet()
         )
     }
@@ -31,7 +31,7 @@ class EntitlementAttackSimulatorTest {
     @Test
     fun knownWeakControlsAreDetected() {
         val results = EntitlementAttackSimulator.runSuite().associateBy { it.id }
-        listOf("fake_receipt", "pending", "replay", "account_swap", "wrong_sku", "local_flag", "negative_spend", "client_amount")
+        listOf("fake_receipt", "pending", "replay", "account_swap", "wrong_sku", "local_flag", "negative_spend", "client_amount", "expired_vip", "refunded", "token_product_swap", "zero_spend")
             .forEach { id -> assertTrue("Expected vulnerable demo: $id", results[id]?.vulnerable == true) }
     }
 
@@ -44,6 +44,10 @@ class EntitlementAttackSimulatorTest {
         assertTrue(results.getValue("wrong_sku").hardenedOutcome.startsWith("DENY"))
         assertTrue(results.getValue("negative_spend").hardenedOutcome.startsWith("DENY"))
         assertTrue(results.getValue("client_amount").hardenedOutcome.startsWith("DENY"))
+        assertTrue(results.getValue("expired_vip").hardenedOutcome.startsWith("DENY"))
+        assertTrue(results.getValue("refunded").hardenedOutcome.startsWith("DENY"))
+        assertTrue(results.getValue("token_product_swap").hardenedOutcome.startsWith("DENY"))
+        assertTrue(results.getValue("zero_spend").hardenedOutcome.startsWith("DENY"))
     }
 
     @Test
