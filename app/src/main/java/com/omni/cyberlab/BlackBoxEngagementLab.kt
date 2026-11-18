@@ -246,7 +246,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             for (index in 0 until registryItems.length()) {
                 val item = registryItems.optJSONObject(index) ?: continue
                 val id = item.optString("id")
-                FilterChip(selected = activeEngagementId == id, onClick = { activeEngagementId = id; registryPrefs.edit().putString("active_engagement_id", id).apply() }, label = { Text(item.optString("title").take(18)) })
+                FilterChip(selected = activeEngagementId == id, onClick = { activeEngagementId = id; renameWorkspaceTitle = item.optString("title"); registryPrefs.edit().putString("active_engagement_id", id).apply() }, label = { Text(item.optString("title").take(18)) })
             }
         }
         Text("Active workspace: ${if (activeEngagementId == "default") "Original workspace" else activeEngagementId}", style = MaterialTheme.typography.labelSmall)
