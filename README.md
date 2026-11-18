@@ -182,3 +182,10 @@ This repository contains source code. A build is considered successful only when
 
 - Adds rename and confirmed-delete controls for non-original engagement workspaces. Deletion clears that engagement's local preference store and removes it from the workspace registry; the Original workspace is protected. Export reports before deleting a workspace.
 - Workspace names are local labels. The feature does not provide encrypted evidence vaults, cloud backups, multi-user permissions or client portal access.
+### Evidence vault, portfolio dashboard and encrypted backups
+
+- Client workspaces include an app-private evidence vault. Attachments are encrypted individually with AES-256-GCM using a per-engagement Android Keystore key; each import is limited to 10 MB. Export creates a decrypted copy only at a user-selected destination. Workspace deletion removes the vault directory and its Keystore key.
+- The client portfolio overview aggregates local counts across workspaces without merging their records.
+- Client PDF reports include a confidential-review label, client/engagement reference, executive summary, coverage, severity counts, finding details and limitations.
+- Workspace backup files use PBKDF2-HMAC-SHA256 (250,000 iterations) and AES-256-GCM with a user passphrase. Restore validates app package and workspace identity and resets authorization to false so the operator must reconfirm scope.
+- Workspace preference backups do not include evidence file contents. Evidence attachments remain in the separate encrypted vault and must be exported individually. Backups are local files; no cloud sync is provided.
