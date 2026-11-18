@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -134,4 +135,30 @@ func TestAuthorizationFailsClosedWithoutConfiguredKey(t *testing.T) {
 	if s.authorized(r) {
 		t.Fatal("authorization must fail when server key is not configured")
 	}
+}
+
+
+func TestDecodeJSONBodyRejectsTrailingValues(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"valid"} {"admin":true}`))
+	w := httptest.NewRecorder()
+	var dst struct { Name string `json:"name"` }
+	if err := decodeJSONBody(w, r, 1024, &dst, true); err == nil { t.Fatal("expected trailing JSON value to be rejected") }
+}
+func TestDecodeJSONBodyRejectsUnknownFields(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"valid","isAdmin":true}`))
+	w := httptest.NewRecorder()
+	var dst struct { Name string `json:"name"` }
+	if err := decodeJSONBody(w, r, 1024, &dst, true); err == nil { t.Fatal("expected unknown JSON field to be rejected") }
+}
+func TestDecodeJSONBodyEnforcesSizeLimit(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"this body is too long"}`))
+	w := httptest.NewRecorder()
+	var dst struct { Name string `json:"name"` }
+	if err := decodeJSONBody(w, r, 8, &dst, true); err == nil { t.Fatal("expected oversized JSON body to be rejected") }
+}
+func TestDecodeJSONBodyAllowsProviderExtensionFields(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"message":{"data":"e30="},"providerFutureField":true}`))
+	w := httptest.NewRecorder()
+	var dst rtdnEnvelope
+	if err := decodeJSONBody(w, r, 1024, &dst, false); err != nil { t.Fatalf("provider extension field should be tolerated: %v", err) }
 }
