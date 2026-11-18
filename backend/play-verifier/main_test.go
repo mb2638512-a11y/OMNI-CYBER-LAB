@@ -59,3 +59,43 @@ func TestWalletInputValidation(t *testing.T) {
 		if validWalletIdentity(v.user,v.currency,v.tx) { t.Fatalf("invalid wallet identity accepted: %+v",v) }
 	}
 }
+
+
+func TestSubscriptionEntitlementStates(t *testing.T) {
+	future := "2099-01-01T00:00:00Z"
+	cases := []struct {
+		name, state, expiry string
+		entitled bool
+	}{
+		{"active future", "SUBSCRIPTION_STATE_ACTIVE", future, true},
+		{"grace future", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD", future, true},
+		{"canceled until expiry", "SUBSCRIPTION_STATE_CANCELED", future, true},
+		{"paused", "SUBSCRIPTION_STATE_PAUSED", future, false},
+		{"on hold", "SUBSCRIPTION_STATE_ON_HOLD", future, false},
+		{"expired", "SUBSCRIPTION_STATE_ACTIVE", "2020-01-01T00:00:00Z", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"subscriptionState":"` + tc.state + `","lineItems":[{"productId":"vip.monthly","expiryTime":"` + tc.expiry + `"}]}`
+			s := &server{googleClient: fakeClient(body, http.StatusOK)}
+			got, err := s.verifyWithGoogle(context.Background(), verifyRequest{
+				PackageName: "com.example.owner", ProductID: "vip.monthly",
+				PurchaseToken: "test-token", PurchaseType: "subscription",
+			})
+			if err != nil { t.Fatal(err) }
+			if !got.Verified || got.Entitled != tc.entitled {
+				t.Fatalf("unexpected entitlement result: %+v", got)
+			}
+		})
+	}
+}
+
+func TestSubscriptionWrongProductRejected(t *testing.T) {
+	body := `{"subscriptionState":"SUBSCRIPTION_STATE_ACTIVE","lineItems":[{"productId":"other.sku","expiryTime":"2099-01-01T00:00:00Z"}]}`
+	s := &server{googleClient: fakeClient(body, http.StatusOK)}
+	_, err := s.verifyWithGoogle(context.Background(), verifyRequest{
+		PackageName: "com.example.owner", ProductID: "vip.monthly",
+		PurchaseToken: "test-token", PurchaseType: "subscription",
+	})
+	if err == nil { t.Fatal("expected subscription product mismatch rejection") }
+}
