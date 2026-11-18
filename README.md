@@ -173,3 +173,8 @@ This repository contains source code. A build is considered successful only when
 - Checkpoints are snapshots, not isolated multi-engagement databases. They do not switch or restore a prior workspace, and all records remain on the device under the package-specific local preferences.
 
 - The latest two checkpoints are compared in-app for coverage and test-record count changes, plus finding-title additions/removals. This is a lightweight historical comparison only: title absence is not evidence of remediation, and count deltas do not validate test quality.
+
+### Isolated client engagement workspaces
+
+- Adds a local workspace registry with separate per-engagement preference stores, create and switch controls. Existing package-level assessment data remains available as the Original workspace; newly created engagements keep their scope, findings, test records, evidence references and checkpoint history isolated from one another.
+- Workspace registry and records remain on this Android device. This is not cloud sync, multi-user access control, encrypted client vault storage or a remote client portal. Use device security and avoid storing secrets or personal data.
