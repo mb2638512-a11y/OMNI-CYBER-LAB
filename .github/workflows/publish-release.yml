@@ -34,12 +34,12 @@ jobs:
       - name: Publish GitHub release with direct APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.13.0
-          name: LUCKY PATCHES v0.13.0
+          tag_name: v0.14.0
+          name: LUCKY PATCHES v0.14.0
           body: |
-            LUCKY PATCHES v0.13.0 — Android debug APK.
+            LUCKY PATCHES v0.14.0 — Android debug APK.
 
-            Adds an owner-authorized ad-config APK patcher for supported text flags under assets/ and res/raw/, with unsigned APK rebuild, stale-signature removal, SHA-256 and before/after ZIP diff. It also includes installed-app inventory, APK inspection, security QA, Shizuku read-only diagnostics, purchase/license simulations and evidence reports.
+            Adds an inert APK repackaging/signature-tamper QA probe and an owner-authorized ad-config APK patcher for supported text flags under assets/ and res/raw/, with unsigned APK rebuild, stale-signature removal, SHA-256 and before/after ZIP diff. The tamper probe adds only a marker asset and removes stale signature metadata; it does not modify app logic or entitlements. It also includes installed-app inventory, APK inspection, security QA, Shizuku read-only diagnostics, purchase/license simulations and evidence reports.
 
             The ad-config patch changes only exact owner-controlled configuration flags. The app must actually read those flags for its ad behavior to change. It does not strip third-party ad SDK code or bypass another developer's monetization. Full Apktool decode/rebuild remains available through the Termux ARM64 companion. Sign with your own keystore and validate on a controlled device; physical-device runtime validation is not claimed.
           files: app/build/outputs/apk/debug/app-debug.apk
