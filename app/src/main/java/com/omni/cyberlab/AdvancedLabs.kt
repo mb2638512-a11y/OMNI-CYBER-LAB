@@ -85,6 +85,32 @@ private fun buildPatchedApk(source: File, entryName: String, replacement: String
     return output
 }
 
+private fun apkDiffSummary(before: File, after: File): String {
+    fun hashes(file: File): Map<String, String> = ZipFile(file).use { zip ->
+        val out = linkedMapOf<String, String>()
+        val entries = zip.entries(); var count = 0
+        while (entries.hasMoreElements()) {
+            val e = entries.nextElement(); require(++count <= 8000) { "Too many APK entries for diff." }
+            if (!e.isDirectory) out[e.name] = MessageDigest.getInstance("SHA-256").digest(zip.getInputStream(e).use { it.readBytes() }).joinToString("") { "%02X".format(it) }
+        }
+        out
+    }
+    val a = hashes(before); val b = hashes(after)
+    val added = b.keys - a.keys; val removed = a.keys - b.keys
+    val changed = (a.keys intersect b.keys).filter { a[it] != b[it] }
+    return buildString {
+        appendLine("OMNI CYBER LAB • APK BEFORE / AFTER DIFF")
+        appendLine("Original SHA-256: ${labSha256(before)}")
+        appendLine("Modified SHA-256: ${labSha256(after)}")
+        appendLine("Entries: ${a.size} original → ${b.size} modified")
+        appendLine("Added: ${added.size} • Removed: ${removed.size} • Changed: ${changed.size}")
+        if (added.isNotEmpty()) { appendLine("\nADDED"); added.sorted().forEach { appendLine("+ $it") } }
+        if (removed.isNotEmpty()) { appendLine("\nREMOVED"); removed.sorted().forEach { appendLine("- $it") } }
+        if (changed.isNotEmpty()) { appendLine("\nCHANGED"); changed.sorted().forEach { appendLine("* $it") } }
+        appendLine("\nNote: ZIP-entry hashes are compared; this is not a semantic manifest/resource diff or a signature-validity verdict.")
+    }
+}
+
 @Composable
 fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPath: String?, initialTab: Int = 0, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
@@ -95,6 +121,7 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
     var editedText by remember { mutableStateOf("") }
     var patchStatus by remember { mutableStateOf("Select an imported APK with assets/ or res/raw/ text files.") }
     var patchedFile by remember { mutableStateOf<File?>(null) }
+    var diffReport by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")) { uri: Uri? ->
         if (uri != null && patchedFile?.isFile == true) {
@@ -103,6 +130,9 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
                 catch (e: Exception) { patchStatus = "Export failed: ${e.message ?: "unknown error"}" }
             }
         }
+    }
+    val diffExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
+        if (uri != null && diffReport.isNotBlank()) scope.launch { try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(diffReport) } ?: error("Could not open report destination.") }; patchStatus = "Before/after diff report exported." } catch (e: Exception) { patchStatus = "Diff export failed: ${e.message}" } }
     }
     val productKey = "billing_product_$packageName"
     val productIdSaved = prefs.getString(productKey, "test.premium.monthly") ?: "test.premium.monthly"
@@ -135,6 +165,12 @@ fun AdvancedModificationBillingLabs(context: Context, packageName: String, apkPa
                 OutlinedTextField(value = editedText, onValueChange = { editedText = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 300.dp), label = { Text("Edited text content") }, minLines = 6)
                 Button(onClick = { scope.launch { busy = true; try { patchedFile = withContext(Dispatchers.IO) { val src = File(apkPath!!); val out = File(context.cacheDir, "omni-patched-${System.currentTimeMillis()}.apk"); buildPatchedApk(src, selectedEntry, editedText, out) }; patchStatus = "Patch package built • SHA-256 ${withContext(Dispatchers.IO) { labSha256(patchedFile!!) }.take(32)}… • signature blocks removed." } catch (e: Exception) { patchStatus = "Build failed: ${e.message}" }; busy = false } }, enabled = !busy && selectedEntry.isNotBlank() && !apkPath.isNullOrBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Building…" else "Build modified unsigned APK") }
                 Button(onClick = { exportLauncher.launch("omni-patched-${packageName.substringAfterLast(".")}.apk") }, enabled = patchedFile?.isFile == true, modifier = Modifier.fillMaxWidth()) { Text("Export modified APK") }
+                Button(onClick = { scope.launch { busy = true; try { diffReport = withContext(Dispatchers.IO) { apkDiffSummary(File(apkPath!!), patchedFile!!) }; patchStatus = "Before/after ZIP-entry diff generated." } catch (e: Exception) { patchStatus = "Diff failed: ${e.message}" }; busy = false } }, enabled = patchedFile?.isFile == true && !busy, modifier = Modifier.fillMaxWidth()) { Text("Generate before / after diff") }
+                if (diffReport.isNotBlank()) {
+                    Text(diffReport, color = LabMuted, fontSize = 9.sp)
+                    OutlinedButton(onClick = { diffExportLauncher.launch("omni-apk-diff-${packageName.substringAfterLast(".")}.txt") }, modifier = Modifier.fillMaxWidth()) { Text("Export diff report") }
+                }
+
             }
             Text("STATUS: $patchStatus", color = LabMuted, fontSize = 10.sp)
             Text("Supported now: bounded text files under assets/ and res/raw/. The builder preserves other ZIP entries, removes stale APK signature files, and outputs an unsigned APK. Binary AndroidManifest.xml, compiled resources.arsc, layouts, icons, native libraries and DEX are not edited by this patcher. Existing Smali DEX workflow remains separate. Sign with your own key and verify the output before install.", color = LabWarn, fontSize = 9.sp)
