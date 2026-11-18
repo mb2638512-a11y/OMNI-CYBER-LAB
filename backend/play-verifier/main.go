@@ -185,7 +185,7 @@ func (s *server) fulfillWallet(w http.ResponseWriter, r *http.Request) {
 	var inserted string
 	err = tx.QueryRow(ctx, `INSERT INTO wallet_transactions(transaction_id,user_id,currency,amount,direction,source,purchase_token_sha256,created_at)
 		VALUES($1,$2,$3,$4,'CREDIT','PLAY_PURCHASE',$5,NOW())
-		ON CONFLICT(purchase_token_sha256) DO NOTHING RETURNING transaction_id`, "play:"+tokenHash,req.UserID,currency,amount,tokenHash).Scan(&inserted)
+		ON CONFLICT DO NOTHING RETURNING transaction_id`, "play:"+tokenHash,req.UserID,currency,amount,tokenHash).Scan(&inserted)
 	if errors.Is(err,pgx.ErrNoRows) {
 		var balance int64
 		_ = tx.QueryRow(ctx,`SELECT balance FROM wallet_balances WHERE user_id=$1 AND currency=$2`,req.UserID,currency).Scan(&balance)
