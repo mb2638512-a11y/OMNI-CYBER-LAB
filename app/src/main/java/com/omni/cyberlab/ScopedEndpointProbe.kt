@@ -42,6 +42,7 @@ suspend fun runScopedEndpointProbe(rawUrl: String, allowedHosts: Set<String>, me
     val host = (uri.host ?: error("A valid hostname is required.")).lowercase()
     require(host in allowedHosts.map { it.lowercase() }.toSet()) { "Host is not in the client-approved allowlist." }
     require(uri.userInfo == null) { "Credentials in endpoint URLs are not accepted." }
+    require(uri.port == -1 || uri.port == 443) { "Only the standard HTTPS port 443 is supported by this probe." }
     val safeUrl = URI("https", null, host, uri.port, uri.path.ifBlank { "/" }, null, null).toString()
     val connection = (URL(uri.toString()).openConnection() as HttpsURLConnection).apply {
         requestMethod = method
