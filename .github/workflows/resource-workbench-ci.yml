@@ -47,3 +47,15 @@ jobs:
             if ($android -notmatch [regex]::Escape($marker)) { throw "On-device workflow marker missing: $marker" }
           }
           Write-Host "On-device ARM64 workflow markers validated."
+
+      - name: Catch escaped shell variables in Termux workflow
+        shell: bash
+        run: |
+          script="tools/apktool-workbench/omni-apktool-android.sh"
+          if grep -nF '\\${' "$script"; then
+            echo "Found escaped shell variable expansion; Termux workflow would use literal placeholders."
+            exit 1
+          fi
+          grep -Fq 'local work="${input%.apk}-work"' "$script"
+          grep -Fq 'case "${1:-}" in' "$script"
+          echo "Termux variable expansion checks passed."
