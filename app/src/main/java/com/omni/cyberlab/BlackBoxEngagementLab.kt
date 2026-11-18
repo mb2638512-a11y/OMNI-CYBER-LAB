@@ -401,6 +401,38 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         }, enabled = authorized && findingTitle.isNotBlank() && findingSteps.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save evidence-backed finding") }
         val savedFindings = runCatching { JSONArray(findingsJson) }.getOrElse { JSONArray() }
         Text("Saved findings: ${savedFindings.length()}", style = MaterialTheme.typography.bodyMedium)
+        val findingStatusOptions = listOf("OPEN", "IN PROGRESS", "READY TO RETEST", "RETEST RECORDED • REVIEW", "CLOSED")
+        val findingStatusCounts = findingStatusOptions.associateWith { wanted -> (0 until savedFindings.length()).count { savedFindings.optJSONObject(it)?.optString("workflowStatus", "OPEN") == wanted } }
+        Text(findingStatusOptions.joinToString("  •  ") { "${it}: ${findingStatusCounts[it] ?: 0}" }, style = MaterialTheme.typography.labelSmall)
+        for (findingIndex in 0 until savedFindings.length()) {
+            val findingItem = savedFindings.optJSONObject(findingIndex) ?: continue
+            val currentFindingStatus = findingItem.optString("workflowStatus", "OPEN")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("${findingItem.optString("severity")} • ${findingItem.optString("title")}", style = MaterialTheme.typography.bodyMedium)
+                    Text("CVSS: ${findingItem.opt("cvssBaseScore")?.toString() ?: "Not supplied"} • CWE: ${findingItem.optString("cweReference", "Not supplied")}", style = MaterialTheme.typography.labelSmall)
+                    Text("Workflow: $currentFindingStatus", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = {
+                            val updated = JSONArray(findingsJson)
+                            val item = updated.optJSONObject(findingIndex)
+                            if (item != null) {
+                                val nextStatus = findingStatusOptions[(findingStatusOptions.indexOf(item.optString("workflowStatus", "OPEN")) + 1).mod(findingStatusOptions.size)]
+                                item.put("workflowStatus", nextStatus).put("workflowUpdatedAt", DateFormat.getDateTimeInstance().format(Date()))
+                                findingsJson = updated.toString()
+                                prefs.edit().putString("findings_json", findingsJson).apply()
+                                status = "Finding workflow updated: $nextStatus"
+                            }
+                        }, enabled = authorized) { Text("Advance status") }
+                        TextButton(onClick = {
+                            val updated = JSONArray(findingsJson)
+                            val item = updated.optJSONObject(findingIndex)
+                            if (item != null) { item.put("workflowStatus", "OPEN").put("workflowUpdatedAt", DateFormat.getDateTimeInstance().format(Date())); findingsJson = updated.toString(); prefs.edit().putString("findings_json", findingsJson).apply(); status = "Finding reopened for review." }
+                        }, enabled = authorized) { Text("Reopen") }
+                    }
+                }
+            }
+        }
         if (savedFindings.length() > 0) {
             val latest = savedFindings.optJSONObject(savedFindings.length() - 1)
             if (latest != null) Text("Latest: ${latest.optString("severity")} • ${latest.optString("title")} • ${latest.optString("status")}", style = MaterialTheme.typography.bodySmall)
