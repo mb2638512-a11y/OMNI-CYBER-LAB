@@ -2501,6 +2501,7 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
     var ranAt by remember(app.pkg) { mutableStateOf(prefs.getLong("ran_at_" + app.pkg, 0L)) }
     var comparison by remember(app.pkg) { mutableStateOf(prefs.getString("comparison_" + app.pkg, "") ?: "") }
     var historyCount by remember(app.pkg) { mutableIntStateOf(try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]").length() } catch (_: Exception) { 0 }) }
+    var historyExpanded by remember(app.pkg) { mutableStateOf(false) }
     val results = remember(report) { report.lines().filter { it.startsWith("[") } }
     val pass = results.count { it.startsWith("[PASS]") }
     val review = results.count { it.startsWith("[REVIEW]") }
@@ -2549,6 +2550,19 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
             Text("Last run: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(ranAt)), color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 8.dp))
             Text("HISTORY • $historyCount / 10 saved snapshots", color = Blue, fontSize = 9.sp, modifier = Modifier.padding(top = 5.dp))
             Text(comparison, color = if (comparison.contains("New signals") && !comparison.contains("New signals 0")) Orange else Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+            TextButton(onClick = { historyExpanded = !historyExpanded }) { Text(if (historyExpanded) "Hide run history" else "View saved run history") }
+            if (historyExpanded) {
+                val savedHistory = try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+                if (savedHistory.length() == 0) Text("No saved snapshots.", color = Grey, fontSize = 9.sp)
+                for (index in savedHistory.length() - 1 downTo 0) {
+                    val item = savedHistory.optJSONObject(index) ?: continue
+                    val timestamp = item.optLong("timestamp", 0L)
+                    val oldFindings = item.optJSONArray("findings") ?: org.json.JSONArray()
+                    Text((index + 1).toString() + ". " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(timestamp)) +
+                        " • " + oldFindings.length() + " rule matches", color = Grey, fontSize = 9.sp, modifier = Modifier.padding(vertical = 3.dp))
+                }
+                Text("History keeps the latest 10 local snapshots for this package.", color = Grey, fontSize = 8.sp)
+            }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("PASS" to pass, "REVIEW" to review, "INFO" to info).forEach { (label, count) ->
                     Column(Modifier.weight(1f).background(CardBg, RoundedCornerShape(10.dp)).padding(8.dp)) {
@@ -2580,6 +2594,20 @@ private fun SecurityTestOrchestrator(context: Context, app: AppRow) {
                 }
                 context.startActivity(Intent.createChooser(send, "Export security test report"))
             }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) { Text("Export test run report") }
+            OutlinedButton(onClick = {
+                val historyJson = try { org.json.JSONArray(prefs.getString("history_" + app.pkg, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+                val payload = org.json.JSONObject().put("reportType", "OMNI CYBER LAB regression history")
+                    .put("packageName", app.pkg).put("appName", app.name).put("latestComparison", comparison)
+                    .put("snapshots", historyJson)
+                    .put("limitations", "Static rule snapshots only. A signal no longer matching is not proof of remediation; results are not a vulnerability verdict.")
+                    .toString(2)
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_SUBJECT, "OMNI CYBER LAB regression history • " + app.name)
+                    putExtra(Intent.EXTRA_TEXT, payload)
+                }
+                context.startActivity(Intent.createChooser(send, "Export regression history JSON"))
+            }, modifier = Modifier.fillMaxWidth()) { Text("Export regression history JSON") }
             TextButton(onClick = {
                 report = ""
                 ranAt = 0L
