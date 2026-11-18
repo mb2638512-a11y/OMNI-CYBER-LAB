@@ -1,6 +1,6 @@
 param(
  [Parameter(Mandatory=$true)][ValidateSet("Decode","Build")][string]$Action,
- [Parameter(Mandatory=$true)][string]$ApkPath,
+ [string]$ApkPath="",
  [Parameter(Mandatory=$true)][string]$WorkDir,
  [string]$OutputApk="",
  [switch]$ConfirmAuthorized
@@ -41,18 +41,14 @@ function BuildReport([string]$source,[string]$output,[string]$workspace,[object]
   $rel=$_.FullName.Substring($workspace.TrimEnd('\').Length+1).Replace('\','/')
   if($rel -match '^(smali[^/]*/|lib/|unknown/)'){$outOfScope+=$rel}
  }
- $signature="NOT TESTED • Android apksigner not found"
- $signer=Get-Command apksigner -ErrorAction SilentlyContinue
- if($signer){
-  $verify=(& $signer.Source verify --verbose $output 2>&1|Out-String)
-  if($LASTEXITCODE -eq 0){$signature="PASS • apksigner verified"}else{$signature="FAIL • unsigned/invalid signature"}
- }
+ $signature="NOT TESTED • build output is intentionally unsigned; sign it and verify the signed APK with apksigner"
+ $sourceMatches=((Hash $source)-eq $meta.sourceSha256)
  $report=[ordered]@{
   product="OMNI CYBER LAB • APK Resource Workbench"
   generatedUtc=[DateTime]::UtcNow.ToString("o")
-  result=if($outOfScope.Count -eq 0){"PASS • archive built; runtime not tested"}else{"REVIEW • out-of-scope source edits detected"}
+  result=if($outOfScope.Count -eq 0 -and $sourceMatches){"PASS • archive built; runtime not tested"}else{"REVIEW • source mismatch or out-of-scope source edits detected"}
   sourceSha256=(Hash $source); outputSha256=(Hash $output)
-  sourceHashMatchesWorkspace=((Hash $source)-eq $meta.sourceSha256)
+  sourceHashMatchesWorkspace=$sourceMatches
   output=$output; apktoolVersion=$version
   validation=[ordered]@{archive="PASS";manifest="PASS";resourceTable="PASS";signature=$signature;runtime="NOT TESTED";install="NOT TESTED"}
   counts=[ordered]@{archiveEntries=$entries.Count;resourceFiles=$res.Count;dexFiles=$dex.Count;nativeLibraries=$native.Count}
