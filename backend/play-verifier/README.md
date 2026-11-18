@@ -19,7 +19,7 @@ The service account must be granted the required Play Console access and the And
 
 `POST /v1/play/verify`
 
-Headers: `Authorization: Bearer <OMNI_VERIFIER_API_KEY>`, `Content-Type: application/json`.
+Headers: `Authorization: Bearer <OMNI_VERIFIER_API_KEY>`, `Content-Type: application/json`. The verifier requires the exact Bearer scheme; raw keys, whitespace-padded tokens and malformed authorization headers are rejected. Client endpoints accept one bounded JSON object, reject unknown fields and reject trailing JSON values. The Pub/Sub envelope allows unknown provider fields for forward compatibility but still rejects trailing JSON.
 
 Example body:
 
