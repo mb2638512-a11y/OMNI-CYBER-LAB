@@ -71,4 +71,16 @@ class EntitlementAttackSimulatorTest {
         assertTrue(result.evidence.contains("100"))
     }
 
+    @Test
+    fun ownerAdAndLicenseQaSuiteCoversExpectedCases() {
+        val results = OwnerPatchQaSimulator.runSuite()
+        assertEquals(setOf("owner_ad_config", "ad_reward_spoof", "license_client_flag", "license_expiry"), results.map { it.id }.toSet())
+        results.forEach {
+            assertTrue(it.attackerTechnique.isNotBlank())
+            assertTrue(it.vulnerableOutcome.isNotBlank())
+            assertTrue(it.hardenedOutcome.isNotBlank())
+            assertTrue(it.evidence.contains("Local"))
+        }
+    }
+
 }
