@@ -51,7 +51,11 @@ object SecureEvidenceVault {
             while (true) { val count = input.read(buffer); if (count < 0) break; total += count; require(total <= MAX_BYTES) { "Evidence file exceeds the 10 MB limit." }; output.write(buffer, 0, count) }
             output.toByteArray()
         } ?: error("Cannot read selected evidence file.")
-        require(bytes.isNotEmpty()) { "Selected evidence file is empty." }
+        return importBytes(context, engagementId, label, bytes)
+    }
+
+    fun importBytes(context: Context, engagementId: String, label: String, bytes: ByteArray): JSONObject {
+        require(bytes.isNotEmpty() && bytes.size.toLong() <= MAX_BYTES) { "Evidence file must be between 1 byte and 10 MB." }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key(context, engagementId))
         val encrypted = cipher.doFinal(bytes)
@@ -61,7 +65,6 @@ object SecureEvidenceVault {
         return JSONObject().put("id", id).put("label", label.trim().ifBlank { "Evidence attachment" }.take(100))
             .put("bytes", bytes.size).put("savedAt", DateFormat.getDateTimeInstance().format(Date())).put("encryption", "AES-256-GCM / Android Keystore")
     }
-
     fun read(context: Context, engagementId: String, id: String): ByteArray {
         require(id.matches(Regex("[0-9a-fA-F-]{36}"))) { "Invalid evidence identifier." }
         val file = File(directory(context, engagementId), "$id.bin")
