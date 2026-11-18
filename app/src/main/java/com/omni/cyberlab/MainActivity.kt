@@ -2462,7 +2462,7 @@ private fun GuidedRuntimeTestPanel(context: Context, packageName: String, runtim
                 if (runtimeLogReport.isNotBlank()) { appendLine("PROCESS LOG TRIAGE (bounded snapshot)"); appendLine(runtimeLogReport.take(10000)) }
                 if (shizukuReport.isNotBlank()) { appendLine("SHIZUKU PACKAGE DIAGNOSTICS (read-only)"); appendLine(shizukuReport.take(10000)) }
             }
-            evidence = (evidence + if (evidence.isBlank()) "" else "\n\n" + block).takeLast(24000)
+            evidence = (if (evidence.isBlank()) block else evidence + "\n\n" + block).takeLast(24000)
             prefs.edit().putString(evidenceKey, evidence).apply()
         }, enabled = hasDiagnostics, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Attach latest diagnostics to session") }
         if (evidence.isNotBlank()) {
