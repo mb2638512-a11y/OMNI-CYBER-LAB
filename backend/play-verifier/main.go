@@ -55,6 +55,20 @@ type subscriptionPurchase struct {
 	} `json:"lineItems"`
 }
 
+type walletFulfillRequest struct {
+	PackageName string `json:"packageName"`
+	ProductID string `json:"productId"`
+	PurchaseToken string `json:"purchaseToken"`
+	UserID string `json:"userId"`
+}
+
+type walletSpendRequest struct {
+	UserID string `json:"userId"`
+	Currency string `json:"currency"`
+	Amount int64 `json:"amount"`
+	TransactionID string `json:"transactionId"`
+}
+
 type verifyResponse struct {
 	Verified bool `json:"verified"`
 	Entitled bool `json:"entitled"`
@@ -134,6 +148,92 @@ func (s *server) verify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func validWalletIdentity(userID, currency, transactionID string) bool {
+	if len(userID) < 1 || len(userID) > 128 || strings.ContainsAny(userID, " \t\r\n") { return false }
+	if len(currency) < 2 || len(currency) > 16 { return false }
+	for _, c := range currency { if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') { return false } }
+	if len(transactionID) < 8 || len(transactionID) > 100 || strings.ContainsAny(transactionID, " \t\r\n") { return false }
+	return true
+}
+
+func (s *server) fulfillWallet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error":"POST required"}); return }
+	if !s.authorized(r) { writeJSON(w, http.StatusUnauthorized, map[string]string{"error":"unauthorized"}); return }
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	var req walletFulfillRequest
+	dec := json.NewDecoder(r.Body); dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
+	if req.PackageName=="" || req.ProductID=="" || req.PurchaseToken=="" || req.UserID=="" || !s.allowedPackages[req.PackageName] || !s.allowedProducts[req.ProductID] {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error":"missing or non-allowlisted purchase identity"}); return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second); defer cancel()
+	hash := sha256.Sum256([]byte(req.PurchaseToken)); tokenHash := hex.EncodeToString(hash[:])
+	tx, err := s.db.Begin(ctx); if err != nil { writeJSON(w,500,map[string]string{"error":"wallet transaction could not start"}); return }
+	defer tx.Rollback(ctx)
+	var owner, pkg, product, purchaseType, state string
+	var entitled bool
+	err = tx.QueryRow(ctx, `SELECT user_id, package_name, product_id, purchase_type, purchase_state, entitled FROM play_purchase_ledger WHERE token_sha256=$1 FOR UPDATE`, tokenHash).Scan(&owner,&pkg,&product,&purchaseType,&state,&entitled)
+	if err != nil { writeJSON(w,http.StatusForbidden,map[string]string{"error":"purchase token has not been verified and recorded"}); return }
+	if owner!=req.UserID || pkg!=req.PackageName || product!=req.ProductID || purchaseType!="product" || !entitled {
+		writeJSON(w,http.StatusForbidden,map[string]string{"error":"verified purchase does not match this user, product or consumable product type"}); return
+	}
+	var currency string; var amount int64
+	err = tx.QueryRow(ctx, `SELECT currency, amount FROM wallet_product_grants WHERE package_name=$1 AND product_id=$2`, req.PackageName, req.ProductID).Scan(&currency,&amount)
+	if err != nil || amount<=0 || amount>1000000000 || !validWalletIdentity(req.UserID,currency,"play:"+tokenHash) {
+		writeJSON(w,http.StatusForbidden,map[string]string{"error":"no valid server-side currency grant is configured for this product"}); return
+	}
+	var inserted string
+	err = tx.QueryRow(ctx, `INSERT INTO wallet_transactions(transaction_id,user_id,currency,amount,direction,source,purchase_token_sha256,created_at)
+		VALUES($1,$2,$3,$4,'CREDIT','PLAY_PURCHASE',$5,NOW())
+		ON CONFLICT(purchase_token_sha256) DO NOTHING RETURNING transaction_id`, "play:"+tokenHash,req.UserID,currency,amount,tokenHash).Scan(&inserted)
+	if errors.Is(err,pgx.ErrNoRows) {
+		var balance int64
+		_ = tx.QueryRow(ctx,`SELECT balance FROM wallet_balances WHERE user_id=$1 AND currency=$2`,req.UserID,currency).Scan(&balance)
+		if err:=tx.Commit(ctx); err!=nil { writeJSON(w,500,map[string]string{"error":"wallet transaction commit failed"}); return }
+		writeJSON(w,200,map[string]any{"credited":false,"duplicate":true,"currency":currency,"balance":balance,"message":"Purchase was already fulfilled; no duplicate credit issued."}); return
+	}
+	if err != nil { writeJSON(w,500,map[string]string{"error":"purchase fulfillment ledger write failed"}); return }
+	_, err = tx.Exec(ctx,`INSERT INTO wallet_balances(user_id,currency,balance) VALUES($1,$2,0) ON CONFLICT(user_id,currency) DO NOTHING`,req.UserID,currency)
+	if err != nil { writeJSON(w,500,map[string]string{"error":"wallet initialization failed"}); return }
+	var balance int64
+	err = tx.QueryRow(ctx,`UPDATE wallet_balances SET balance=balance+$1 WHERE user_id=$2 AND currency=$3 AND balance <= 9000000000000000-$1 RETURNING balance`,amount,req.UserID,currency).Scan(&balance)
+	if err != nil { writeJSON(w,500,map[string]string{"error":"wallet credit would exceed the supported balance limit"}); return }
+	if err:=tx.Commit(ctx); err!=nil { writeJSON(w,500,map[string]string{"error":"wallet fulfillment commit failed"}); return }
+	writeJSON(w,200,map[string]any{"credited":true,"duplicate":false,"currency":currency,"creditedAmount":amount,"balance":balance,"message":"Verified purchase credited exactly once to the server-side wallet."})
+}
+
+func (s *server) spendWallet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { writeJSON(w,http.StatusMethodNotAllowed,map[string]string{"error":"POST required"}); return }
+	if !s.authorized(r) { writeJSON(w,http.StatusUnauthorized,map[string]string{"error":"unauthorized"}); return }
+	r.Body=http.MaxBytesReader(w,r.Body,8*1024)
+	var req walletSpendRequest
+	dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
+	if err:=dec.Decode(&req); err!=nil { writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid request body"}); return }
+	if !validWalletIdentity(req.UserID,req.Currency,req.TransactionID) || req.Amount<=0 || req.Amount>1000000000 {
+		writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid user, currency, transaction ID or amount"}); return
+	}
+	ctx,cancel:=context.WithTimeout(r.Context(),8*time.Second); defer cancel()
+	tx,err:=s.db.Begin(ctx); if err!=nil { writeJSON(w,500,map[string]string{"error":"wallet transaction could not start"}); return }
+	defer tx.Rollback(ctx)
+	var oldUser,oldCurrency,oldDirection string; var oldAmount int64
+	err=tx.QueryRow(ctx,`SELECT user_id,currency,direction,amount FROM wallet_transactions WHERE transaction_id=$1`,req.TransactionID).Scan(&oldUser,&oldCurrency,&oldDirection,&oldAmount)
+	if err==nil {
+		if oldUser!=req.UserID || oldCurrency!=req.Currency || oldDirection!="DEBIT" || oldAmount!=req.Amount { writeJSON(w,http.StatusConflict,map[string]string{"error":"transaction ID was already used for a different operation"}); return }
+		var balance int64; _=tx.QueryRow(ctx,`SELECT balance FROM wallet_balances WHERE user_id=$1 AND currency=$2`,req.UserID,req.Currency).Scan(&balance)
+		if err:=tx.Commit(ctx); err!=nil { writeJSON(w,500,map[string]string{"error":"wallet read commit failed"}); return }
+		writeJSON(w,200,map[string]any{"spent":false,"duplicate":true,"currency":req.Currency,"balance":balance}); return
+	}
+	if !errors.Is(err,pgx.ErrNoRows) { writeJSON(w,500,map[string]string{"error":"wallet idempotency lookup failed"}); return }
+	var balance int64
+	err=tx.QueryRow(ctx,`UPDATE wallet_balances SET balance=balance-$1 WHERE user_id=$2 AND currency=$3 AND balance >= $1 RETURNING balance`,req.Amount,req.UserID,req.Currency).Scan(&balance)
+	if errors.Is(err,pgx.ErrNoRows) { writeJSON(w,http.StatusPaymentRequired,map[string]string{"error":"insufficient server-side balance; no spend recorded"}); return }
+	if err!=nil { writeJSON(w,500,map[string]string{"error":"wallet debit failed"}); return }
+	_,err=tx.Exec(ctx,`INSERT INTO wallet_transactions(transaction_id,user_id,currency,amount,direction,source,created_at) VALUES($1,$2,$3,$4,'DEBIT','APP_SPEND',NOW())`,req.TransactionID,req.UserID,req.Currency,req.Amount)
+	if err!=nil { writeJSON(w,500,map[string]string{"error":"wallet debit ledger write failed"}); return }
+	if err:=tx.Commit(ctx); err!=nil { writeJSON(w,500,map[string]string{"error":"wallet debit commit failed"}); return }
+	writeJSON(w,200,map[string]any{"spent":true,"duplicate":false,"currency":req.Currency,"spentAmount":req.Amount,"balance":balance})
+}
+
 func (s *server) verifyWithGoogle(ctx context.Context, req verifyRequest) (verifyResponse, error) {
 	base := "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/" + url.PathEscape(req.PackageName) + "/purchases/"
 	var endpoint string
@@ -190,6 +290,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { if r.Method != http.MethodGet { writeJSON(w,405,map[string]string{"error":"GET required"}); return }; writeJSON(w,200,map[string]string{"status":"ok"}) })
 	mux.HandleFunc("/v1/play/verify", s.verify)
+	mux.HandleFunc("/v1/wallet/fulfill", s.fulfillWallet)
+	mux.HandleFunc("/v1/wallet/spend", s.spendWallet)
 	port := os.Getenv("PORT"); if port=="" { port="8080" }
 	srv := &http.Server{Addr:":"+port, Handler:mux, ReadHeaderTimeout:5*time.Second, ReadTimeout:10*time.Second, WriteTimeout:20*time.Second, IdleTimeout:60*time.Second}
 	log.Printf("Play verifier listening on :%s", port)
