@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 ROOT="/sdcard/Download/OMNI-APK-Workbench"
 usage(){ cat <<'EOF'
-OMNI CYBER LAB • On-device APK resource workbench (Termux)
+OMNI CYBER LAB • On-device full APK decode/rebuild workbench (Termux)
   ./omni-apktool-android.sh setup
   ./omni-apktool-android.sh decode /sdcard/Download/OMNI-APK-Workbench/input.apk
   ./omni-apktool-android.sh build /sdcard/Download/OMNI-APK-Workbench/input-work
@@ -28,14 +28,14 @@ decode(){
  local work="${input%.apk}-work"
  [ ! -e "$work" ]||{ echo "Workspace exists; choose another path.";exit 2; }
  local source_hash;source_hash="$(hash_file "$input")"
- apktool d -f --no-src -o "$work" "$input"
+ apktool d -f -o "$work" "$input"
  mkdir -p "$work/.omni"
  printf '%s\n' "$input" > "$work/.omni/source-path.txt"
  printf '%s\n' "$source_hash" > "$work/.omni/source-sha256.txt"
  (cd "$work"&&find res assets -type f -print0 2>/dev/null|sort -z|xargs -0 -r sha256sum) > "$work/.omni/baseline-resources.sha256"
  apktool --version > "$work/.omni/apktool-version.txt"
  echo "DECODE PASS • $work"
- echo "Edit res/ and assets/. DEX is intentionally not disassembled or rebuilt."
+ echo "FULL DECODE PASS • edit res/, assets/ and smali*/. Apktool rebuilds resources, manifest and DEX from Smali."
 }
 build(){
  local work="$1"
@@ -62,7 +62,7 @@ with zipfile.ZipFile(out) as z:
  names=z.namelist()
  checks={"archive":"PASS","manifest":"PASS" if "AndroidManifest.xml" in names else "FAIL","resourceTable":"PASS" if "resources.arsc" in names else "FAIL","signature":"NOT TESTED • unsigned output","runtime":"NOT TESTED","install":"NOT TESTED"}
  counts={"entries":len(names),"resources":sum(x.startswith("res/") for x in names),"dex":sum(x.endswith(".dex") for x in names),"nativeLibraries":sum(x.startswith("lib/") and x.endswith(".so") for x in names)}
-report={"product":"OMNI CYBER LAB on-device resource rebuild","generatedUtc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"source":source,"sourceSha256":src_hash,"output":out,"outputSha256":out_hash,"checks":checks,"counts":counts,"resourceChanges":{"added":added.splitlines(),"changed":changed.splitlines(),"removed":removed.splitlines()},"result":"PASS" if checks["manifest"]=="PASS" and checks["resourceTable"]=="PASS" else "FAIL","limitations":["Archive build does not prove runtime correctness.","Signature is NOT TESTED: output is unsigned.","Install and functional tests remain NOT TESTED until performed."]}
+report={"product":"OMNI CYBER LAB on-device full APK rebuild","generatedUtc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"source":source,"sourceSha256":src_hash,"output":out,"outputSha256":out_hash,"checks":checks,"counts":counts,"resourceChanges":{"added":added.splitlines(),"changed":changed.splitlines(),"removed":removed.splitlines()},"result":"PASS" if checks["manifest"]=="PASS" and checks["resourceTable"]=="PASS" else "FAIL","limitations":["Archive build does not prove runtime correctness.","Signature is NOT TESTED: output is unsigned.","Install and functional tests remain NOT TESTED until performed."]}
 base=os.path.dirname(out)
 with open(os.path.join(base,"omni-ondevice-build-report.json"),"w") as f:json.dump(report,f,indent=2)
 with open(os.path.join(base,"omni-ondevice-build-report.txt"),"w") as f:
@@ -72,7 +72,7 @@ print("REPORTS WRITTEN • JSON + TXT")
 print("SIGNATURE: NOT TESTED • unsigned output")
 print("RUNTIME / INSTALL: NOT TESTED")
 PY
- echo "BUILD COMPLETE • $aligned"
+ echo "FULL APK BUILD COMPLETE • $aligned"
  echo "Source SHA-256: $expected"
  echo "Output SHA-256: $out_hash"
 }
