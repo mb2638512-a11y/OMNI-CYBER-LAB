@@ -2434,10 +2434,16 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
         addAll((prefs.getStringSet(reviewedKey, emptySet()) ?: emptySet()).toList())
     } }
     val remediationKey = "remediation_" + app.pkg
-    var remediation by remember(app.pkg) { mutableStateOf(try {
+    var remediation by remember(app.pkg) { mutableStateOf<Map<String, String>>(try {
         val stored = org.json.JSONObject(prefs.getString(remediationKey, "{}") ?: "{}")
-        buildMap { stored.keys().forEach { key -> put(key, stored.optString(key, "OPEN")) } }
-    } catch (_: Exception) { emptyMap() }) }
+        val loaded = mutableMapOf<String, String>()
+        val keys = stored.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            loaded[key] = stored.optString(key, "OPEN")
+        }
+        loaded
+    } catch (_: Exception) { emptyMap<String, String>() }) }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text("SECURITY FINDINGS DASHBOARD", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text(app.name + " • " + app.pkg, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
