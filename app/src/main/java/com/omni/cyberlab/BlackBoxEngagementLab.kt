@@ -99,7 +99,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 }
                 withContext(Dispatchers.IO) { SecureWorkspaceBackup.restore(context, packageName, activeEngagementId, payload) }
                 backupPassphrase = ""
-                status = "Workspace backup restored. Reopen this workspace to refresh its displayed records. Evidence attachments were not part of this backup."
+                status = "Workspace backup restored, including evidence attachments. Reopen this workspace to refresh its displayed records."
             } catch (e: Exception) { status = "Backup restore failed: ${e.message}" }
         }
     }
@@ -410,7 +410,7 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         if (evidenceRecords.length() == 0) Text("No encrypted evidence attachments yet.", style = MaterialTheme.typography.bodySmall)
         Divider()
         Text("ENCRYPTED WORKSPACE BACKUP", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
-        Text("Portable workspace backup encrypted with a passphrase using PBKDF2-HMAC-SHA256 and AES-256-GCM. Use at least 12 characters. Restore only accepts a backup for this app package and the currently selected workspace. Evidence files are excluded and remain in the separate vault.", style = MaterialTheme.typography.bodySmall)
+        Text("Portable workspace backup encrypted with a passphrase using PBKDF2-HMAC-SHA256 and AES-256-GCM. Use at least 12 characters. Restore only accepts a backup for this app package and the currently selected workspace. Evidence attachments are included in the encrypted backup and re-encrypted into the restored workspace vault.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(backupPassphrase, { backupPassphrase = it }, label = { Text("Backup passphrase (12+ characters)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { workspaceBackupExport.launch("omni-workspace-backup.ocb") }, enabled = authorized && backupPassphrase.length >= 12, modifier = Modifier.weight(1f)) { Text("Export encrypted") }
