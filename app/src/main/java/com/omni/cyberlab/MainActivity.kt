@@ -737,6 +737,29 @@ private fun runStructuredStaticChecks(app: AppRow): List<String> {
 }
 
 
+private fun securityEvidenceCorrelations(findings: List<String>, evidence: String, timeline: String): List<String> {
+    val corpus = (evidence + "\n" + timeline).lowercase()
+    if (corpus.isBlank()) return emptyList()
+    val evidenceSignals = mutableSetOf<String>()
+    if (listOf("securityexception", "permission denial", "permission denied").any { corpus.contains(it) }) evidenceSignals += "PERMISSIONS"
+    if (listOf("sslhandshakeexception", "certpathvalidatorexception", "trust anchor", "tls").any { corpus.contains(it) }) evidenceSignals += "NETWORK/TLS"
+    if (listOf("fatal exception", "anr in", "application not responding").any { corpus.contains(it) }) evidenceSignals += "CRASH/ANR"
+    if (listOf("sqlite", "database is locked", "enospc", "no space left").any { corpus.contains(it) }) evidenceSignals += "STORAGE"
+    if (listOf("billingresponse", "purchase", "inapp", "subscription").any { corpus.contains(it) }) evidenceSignals += "BILLING"
+    if (listOf("cleartext", "unknownhostexception", "connectexception", "sockettimeout").any { corpus.contains(it) }) evidenceSignals += "NETWORK/TLS"
+    return findings.mapNotNull { line ->
+        val title = line.substringAfter("] ").lowercase()
+        val category = when {
+            title.contains("permission") -> "PERMISSIONS"
+            title.contains("tls") || title.contains("network") || title.contains("cleartext") -> "NETWORK/TLS"
+            title.contains("crash") || title.contains("runtime") || title.contains("anr") -> "CRASH/ANR"
+            title.contains("storage") || title.contains("database") -> "STORAGE"
+            title.contains("billing") || title.contains("purchase") || title.contains("subscription") -> "BILLING"
+            else -> null
+        }
+        if (category != null && evidenceSignals.contains(category)) line.substringAfter("] ").trim() + " ↔ " + category else null
+    }.distinct()
+}
 private fun securityTestCategory(title: String): String {
     val value = title.lowercase()
     return when {
@@ -2449,6 +2472,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
     val completedSteps = (0 until totalSteps).count { savedChecks.getOrNull(it) == '1' }
     val evidence = prefs.getString("evidence_" + app.pkg, "") ?: ""
     val timeline = prefs.getString("timeline_" + app.pkg, "") ?: ""
+    val evidenceCorrelations = remember(findings, evidence, timeline) { securityEvidenceCorrelations(findings, evidence, timeline) }
     val reviewedKey = "reviewed_findings_" + app.pkg
     val reviewed = remember(app.pkg) { mutableStateListOf<String>().apply {
         addAll((prefs.getStringSet(reviewedKey, emptySet()) ?: emptySet()).toList())
@@ -2487,6 +2511,15 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
         LinearProgressIndicator(progress = { completedSteps.toFloat() / totalSteps }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp), color = Blue)
         Text("Evidence: " + if (evidence.isBlank()) "Not attached" else "Attached locally • " + evidence.length + " characters", color = if (evidence.isBlank()) Orange else Green, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
         Text("Timeline: " + if (timeline.isBlank()) "No events recorded" else "Available • " + timeline.lines().size + " events", color = Grey, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("EVIDENCE CORRELATION • KEYWORD-BASED", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
+        if (evidenceCorrelations.isEmpty()) {
+            Text(if (evidence.isBlank() && timeline.isBlank()) "Attach runtime evidence or record test events to enable correlation." else "No matching evidence categories found in the saved evidence and timeline.", color = Grey, fontSize = 9.sp)
+        } else {
+            evidenceCorrelations.forEach { match ->
+                Text("Possible overlap: $match", color = Orange, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+        Text("Correlation uses text markers only; it does not prove that a finding caused a runtime event.", color = Grey, fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
         Text("FINDINGS & REVIEW TRACKER", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
         findings.forEach { finding ->
             val title = finding.substringAfter("] ").ifBlank { finding }
@@ -2524,6 +2557,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
                 put("severityCounts", org.json.JSONObject().put("high", high).put("medium", medium).put("review", review).put("info", info))
                 put("manualTestCoverage", org.json.JSONObject().put("completed", completedSteps).put("total", totalSteps))
                 put("evidenceAttached", evidence.isNotBlank())
+                put("evidenceCorrelations", org.json.JSONArray(evidenceCorrelations))
                 put("timelineEvents", if (timeline.isBlank()) org.json.JSONArray() else org.json.JSONArray(timeline.lines()))
                 put("reviewedFindings", org.json.JSONArray(reviewed.toList()))
                 put("remediationTracking", org.json.JSONObject().apply { remediation.forEach { (key, value) -> put(key, value) } })
