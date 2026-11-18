@@ -160,3 +160,8 @@ This repository contains source code. A build is considered successful only when
 
 - Evidence-backed findings now show a per-finding workflow status: OPEN → IN PROGRESS → READY TO RETEST → RETEST RECORDED • REVIEW → CLOSED. Operators can advance or reopen a finding; status changes are timestamped and saved locally.
 - A dashboard summary counts findings by workflow state. These are operator-managed workflow labels, not automatic proof of remediation or a passed retest. Use a fresh test and attach evidence before closing a finding.
+
+### Professional client PDF report
+
+- Adds a client-facing PDF export with client/engagement metadata, target and scope, authorization confirmation, attack-surface checklist coverage, finding details (severity, CVSS/CWE, reproduction, impact/evidence, remediation and workflow state), test-record counts and operator notes.
+- The report explicitly documents limitations: operator-entered records are not independent certification, untested areas are not proven secure, and workflow labels are not independent retest verification.
