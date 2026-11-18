@@ -146,6 +146,11 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
     var matrixObserved by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
     var matrixEvidence by remember(packageName, activeEngagementId) { mutableStateOf("") }
     var matrixJson by remember(packageName, activeEngagementId) { mutableStateOf(prefs.getString("authorization_matrix", "[]") ?: "[]") }
+    var authorizationProbeEndpoint by remember(packageName, activeEngagementId) { mutableStateOf("") }
+    var authorizationTokenA by remember { mutableStateOf("") }
+    var authorizationTokenB by remember { mutableStateOf("") }
+    var authorizationProbeBusy by remember { mutableStateOf(false) }
+    var authorizationProbeSummary by remember(packageName, activeEngagementId) { mutableStateOf("") }
     val sessionChecks = listOf("Token storage: secrets not exposed in logs, clipboard or world-readable files", "Logout invalidation: old session no longer accepted by client backend", "Session expiry: expired access token is rejected", "Refresh lifecycle: refresh token rotation and expiry behavior", "Refresh replay: previously rotated token is rejected", "Revocation: password reset or account disable invalidates sessions as designed", "Account switching: prior account data is not shown after switching users", "Concurrent sessions: device/session management follows product policy", "Authentication errors: responses do not disclose sensitive account details", "Session persistence: app restart behavior matches documented policy", "Sensitive screens: app switcher/background exposure is controlled", "Re-authentication: sensitive actions require fresh authentication where required")
     var sessionCase by remember(packageName, activeEngagementId) { mutableStateOf(0) }
     var sessionOutcome by remember(packageName, activeEngagementId) { mutableStateOf("NOT TESTED") }
@@ -639,6 +644,35 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
         Divider()
         Text("API AUTHORIZATION MATRIX", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         Text("Use only client-owned test accounts and records. Compare expected access with observed responses; do not enumerate or modify other users’ data.", style = MaterialTheme.typography.bodySmall)
+        Text("TWO-ACCOUNT AUTHORIZATION CHECK • READ-ONLY", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+        Text("One bounded GET request to the same allowlisted staging resource with two distinct short-lived client test sessions. Tokens stay in memory, are cleared after the run and are never written to reports. Response bodies are discarded after hashing.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(authorizationProbeEndpoint, { authorizationProbeEndpoint = it }, label = { Text("Exact HTTPS staging resource URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(authorizationTokenA, { authorizationTokenA = it }, label = { Text("Account A short-lived bearer token") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        OutlinedTextField(authorizationTokenB, { authorizationTokenB = it }, label = { Text("Account B short-lived bearer token") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        Button(onClick = {
+            val endpointValue = authorizationProbeEndpoint.trim()
+            val tokenAValue = authorizationTokenA
+            val tokenBValue = authorizationTokenB
+            authorizationProbeBusy = true
+            scope.launch {
+                try {
+                    val hosts = apiHosts.split(Regex("[,\\s;]+")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+                    val pair = withContext(Dispatchers.IO) { AuthorizationBoundaryProbe.compareAccounts(endpointValue, hosts, tokenAValue, tokenBValue) }
+                    val first = pair.first
+                    val second = pair.second
+                    val sameContent = first.bodySha256 == second.bodySha256
+                    authorizationProbeSummary = "Account A: HTTP ${first.statusCode}, ${first.bodyBytes} bytes, ${first.elapsedMs} ms\nAccount B: HTTP ${second.statusCode}, ${second.bodyBytes} bytes, ${second.elapsedMs} ms\nBody hashes ${if (sameContent) "MATCH" else "DIFFER"} • SHA-256 A ${first.bodySha256.take(16)}… / B ${second.bodySha256.take(16)}…\nRead-only comparison only; interpret against documented access policy."
+                    status = "Two-account authorization check completed. Review status codes and hashes; this is a signal, not an automatic vulnerability verdict."
+                } catch (e: Exception) {
+                    authorizationProbeSummary = "Check failed safely: ${e.message ?: "request error"}"
+                    status = "Authorization boundary check did not complete."
+                } finally {
+                    authorizationTokenA = ""; authorizationTokenB = ""; authorizationProbeBusy = false
+                }
+            }
+        }, enabled = authorized && !authorizationProbeBusy && authorizationProbeEndpoint.isNotBlank() && authorizationTokenA.isNotBlank() && authorizationTokenB.isNotBlank() && apiHosts.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(if (authorizationProbeBusy) "Checking…" else "Compare account access") }
+        if (authorizationProbeSummary.isNotBlank()) Text(authorizationProbeSummary, style = MaterialTheme.typography.bodySmall)
+        Text("Safety: exact allowlisted hostname, HTTPS/443, GET only, no redirects, 7-second timeouts, 64 KB response cap, private/local destinations blocked. Use staging records and revocable test tokens.", style = MaterialTheme.typography.labelSmall)
         OutlinedTextField(matrixResource, { matrixResource = it }, label = { Text("API route / resource / record ID (test data only)") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(matrixActor, { matrixActor = it }, label = { Text("Actor role / test account label") }, modifier = Modifier.fillMaxWidth())
         Text("Expected access", style = MaterialTheme.typography.labelMedium)
