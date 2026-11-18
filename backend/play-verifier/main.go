@@ -296,7 +296,7 @@ func (s *server) rtdn(w http.ResponseWriter, r *http.Request) {
  payload,err:=idtoken.Validate(ctx,auth,audience)
  if err!=nil || payload.Claims["email"]!=expectedEmail || payload.Claims["email_verified"]!=true { writeJSON(w,401,map[string]string{"error":"invalid Pub/Sub push identity"}); return }
  r.Body=http.MaxBytesReader(w,r.Body,128*1024)
- var envelope rtdnEnvelope; dec:=json.NewDecoder(r.Body); dec.DisallowUnknownFields()
+ var envelope rtdnEnvelope; dec:=json.NewDecoder(r.Body)
  if err:=dec.Decode(&envelope); err!=nil || envelope.Message.Data=="" { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub envelope"}); return }
  raw,err:=base64.StdEncoding.DecodeString(envelope.Message.Data); if err!=nil { writeJSON(w,400,map[string]string{"error":"invalid Pub/Sub data encoding"}); return }
  var data rtdnData; if err:=json.Unmarshal(raw,&data); err!=nil { writeJSON(w,400,map[string]string{"error":"invalid RTDN payload"}); return }
