@@ -171,3 +171,5 @@ This repository contains source code. A build is considered successful only when
 - Operators can save up to 20 immutable local checkpoints of the current engagement workspace. Each checkpoint captures client/reference/status, target and scope, manual coverage, finding records, API authorization observations, session/local-data/network/billing test records, endpoint probe history and notes.
 - The workspace displays the latest three checkpoints and includes the full checkpoint archive in JSON export; the PDF report indicates how many checkpoints have been saved.
 - Checkpoints are snapshots, not isolated multi-engagement databases. They do not switch or restore a prior workspace, and all records remain on the device under the package-specific local preferences.
+
+- The latest two checkpoints are compared in-app for coverage and test-record count changes, plus finding-title additions/removals. This is a lightweight historical comparison only: title absence is not evidence of remediation, and count deltas do not validate test quality.
