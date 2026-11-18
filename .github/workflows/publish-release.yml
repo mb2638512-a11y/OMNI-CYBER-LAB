@@ -30,10 +30,10 @@ jobs:
       - name: Publish GitHub release with direct APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.12.0
-          name: LUCKY PATCHES v0.12.0
+          tag_name: v0.13.0
+          name: LUCKY PATCHES v0.13.0
           body: |
-            LUCKY PATCHES v0.12.0 — Android debug APK.
+            LUCKY PATCHES v0.13.0 — Android debug APK.
 
             Includes installed-app and APK inventory, static security orchestration, Shizuku read-only diagnostics, 12 adversarial purchase and virtual-economy QA scenarios, evidence reports, strict Play verifier request parsing, and expanded Android regression tests.
 
