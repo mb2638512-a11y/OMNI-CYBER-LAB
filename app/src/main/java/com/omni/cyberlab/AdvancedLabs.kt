@@ -103,7 +103,7 @@ internal fun rewriteOwnerAdConfigText(input: String): Pair<String, Int> {
         output = pattern.replace(output) { match ->
             count++
             when (index) {
-                0 -> match.groupValues[1] + if (match.groupValues[2] == "1") "0" else "false" + match.groupValues[3]
+                0 -> match.groupValues[1] + (if (match.groupValues[2] == "1") "0" else "false") + match.groupValues[3]
                 1 -> match.groupValues[1] + "false" + match.groupValues[2]
                 else -> match.groupValues[1] + "false" + match.groupValues[2]
             }
