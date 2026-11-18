@@ -41,6 +41,7 @@ private val purchaseAdversarialCases = listOf(
 fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier) {
     var results by remember(targetPackage) { mutableStateOf<Map<Int, String>>(emptyMap()) }
     var exploitResults by remember(targetPackage) { mutableStateOf<List<EntitlementSimulationResult>>(emptyList()) }
+    var ownerPatchResults by remember(targetPackage) { mutableStateOf<List<EntitlementSimulationResult>>(emptyList()) }
     var selected by remember(targetPackage) { mutableStateOf("ALL") }
     val green = Color(0xFF55E6A5)
     val muted = Color(0xFF9AA6B2)
@@ -69,6 +70,23 @@ fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier)
                 Text("SIMULATED ${results.size} / ${visible.size} • NOT A LIVE TARGET TEST", color = green, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 OutlinedButton(onClick = { exploitResults = EntitlementAttackSimulator.runSuite() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Run local attacker exploit + hardened-control suite", fontSize = 9.sp)
+                }
+                OutlinedButton(onClick = { ownerPatchResults = OwnerPatchQaSimulator.runSuite() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Run owner ad-removal + license-resistance QA", fontSize = 9.sp)
+                }
+                if (ownerPatchResults.isNotEmpty()) {
+                    Text("OWNER PATCH QA • ${ownerPatchResults.size} LOCAL TEST CASES • NO APK PATCH APPLIED", color = amber, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    ownerPatchResults.forEach { result ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B28))) {
+                            Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(result.title, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("TEST: ${result.attackerTechnique}", color = muted, fontSize = 9.sp)
+                                Text("WEAK CONTROL: ${result.vulnerableOutcome}", color = Color(0xFFFF6878), fontSize = 9.sp)
+                                Text("OWNER CONTROL: ${result.hardenedOutcome}", color = green, fontSize = 9.sp)
+                                Text("EVIDENCE: ${result.evidence}", color = muted, fontSize = 8.sp)
+                            }
+                        }
+                    }
                 }
                 if (exploitResults.isNotEmpty()) {
                     val vulnerableCount = exploitResults.count { it.vulnerable }
