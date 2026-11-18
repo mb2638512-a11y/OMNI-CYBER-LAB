@@ -249,6 +249,39 @@ private fun decodeApkManifestAndResources(path: String?): String {
             output.append("DECODED ANDROID MANIFEST\n")
             output.append(manifest.take(24000))
             if (manifest.length > 24000) output.append("\n[Manifest output truncated at 24,000 characters.]")
+            output.append("\n\nDEEP LINK / APP LINK ATTACK-SURFACE REVIEW\n")
+            val activityBlocks = Regex("(?is)<activity\\b([^>]*)>(.*?)</activity>").findAll(manifest).toList()
+            var linkCount = 0
+            activityBlocks.forEach { activityMatch ->
+                val attrs = activityMatch.groupValues[1]
+                val body = activityMatch.groupValues[2]
+                val activityName = Regex("android:name\\s*=\\s*\"([^\"]+)\"").find(attrs)?.groupValues?.getOrNull(1) ?: "(unnamed activity)"
+                val filters = Regex("(?is)<intent-filter\\b[^>]*>(.*?)</intent-filter>").findAll(body)
+                filters.forEach filterLoop@ { filter ->
+                    val block = filter.groupValues[1]
+                    val actions = Regex("(?is)<action\\b([^>]*)>").findAll(block).mapNotNull { Regex("android:name\\s*=\\s*\"([^\"]+)\"").find(it.groupValues[1])?.groupValues?.getOrNull(1) }.toList()
+                    val categories = Regex("(?is)<category\\b([^>]*)>").findAll(block).mapNotNull { Regex("android:name\\s*=\\s*\"([^\"]+)\"").find(it.groupValues[1])?.groupValues?.getOrNull(1) }.toList()
+                    val dataTags = Regex("(?is)<data\\b([^>]*)>").findAll(block).map { it.groupValues[1] }.toList()
+                    if (dataTags.isEmpty()) return@filterLoop
+                    linkCount++
+                    val schemes = dataTags.flatMap { tag -> Regex("android:scheme\\s*=\\s*\"([^\"]+)\"").findAll(tag).map { it.groupValues[1] }.toList() }.distinct()
+                    val hosts = dataTags.flatMap { tag -> Regex("android:host\\s*=\\s*\"([^\"]+)\"").findAll(tag).map { it.groupValues[1] }.toList() }.distinct()
+                    val paths = dataTags.flatMap { tag -> Regex("android:path(?:Prefix|Pattern|AdvancedPattern)?\\s*=\\s*\"([^\"]+)\"").findAll(tag).map { it.groupValues[1] }.toList() }.distinct()
+                    val browsable = "android.intent.category.BROWSABLE" in categories
+                    val customScheme = schemes.any { !it.equals("https", true) && !it.equals("http", true) }
+                    val wildcardHost = hosts.any { it == "*" || it.startsWith("*.") }
+                    val status = when { wildcardHost -> "HIGH REVIEW • wildcard host"; customScheme && browsable -> "REVIEW • browsable custom scheme"; schemes.any { it.equals("http", true) } -> "REVIEW • HTTP scheme"; else -> "INFO • inspect routing and authorization" }
+                    output.append("\n[").append(status).append("] ").append(activityName).append("\n")
+                    output.append("Actions: ").append(actions.joinToString().ifBlank { "none" }).append("\n")
+                    output.append("Categories: ").append(categories.joinToString().ifBlank { "none" }).append("\n")
+                    output.append("Schemes: ").append(schemes.joinToString().ifBlank { "none" }).append(" • Hosts: ").append(hosts.joinToString().ifBlank { "none" }).append("\n")
+                    output.append("Paths: ").append(paths.joinToString().ifBlank { "none" }).append("\n")
+                    output.append("Review: validate URI parsing, untrusted parameters, host/path allowlists, authentication and object-level authorization.\n")
+                }
+            }
+            output.append("Intent filters with data elements reviewed: ").append(linkCount).append("\n")
+            if (linkCount == 0) output.append("No activity intent-filter data elements were found by this parser; verify the decoded manifest manually.\n")
+            output.append("Static manifest heuristics only. No deep links are launched and no target app state is changed.\n")
             val xmlPaths = ZipFile(file).use { zip ->
                 zip.entries().asSequence().map { it.name }.filter { it.startsWith("res/") && it.endsWith(".xml") }.sorted().take(12).toList()
             }
