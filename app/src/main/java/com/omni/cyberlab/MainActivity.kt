@@ -2381,12 +2381,20 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
         Text("SECURITY FINDINGS DASHBOARD", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text(app.name + " • " + app.pkg, color = Grey, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            AuditCard("HIGH", listOf("Findings" to high.toString()))
-            AuditCard("MEDIUM", listOf("Findings" to medium.toString()))
+            listOf("HIGH" to high, "MEDIUM" to medium).forEach { (label, count) ->
+                Column(Modifier.weight(1f).background(CardBg, RoundedCornerShape(12.dp)).padding(10.dp)) {
+                    Text(label, color = if (label == "HIGH") Red else Orange, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(count.toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            AuditCard("REVIEW", listOf("Findings" to review.toString()))
-            AuditCard("INFO", listOf("Findings" to info.toString()))
+        Row(Modifier.fillMaxWidth().padding(top = 7.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("REVIEW" to review, "INFO" to info).forEach { (label, count) ->
+                Column(Modifier.weight(1f).background(CardBg, RoundedCornerShape(12.dp)).padding(10.dp)) {
+                    Text(label, color = if (label == "REVIEW") Orange else Blue, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(count.toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
         Text("TEST COVERAGE • $completedSteps / $totalSteps manual steps", color = Blue, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 12.dp))
         LinearProgressIndicator(progress = { completedSteps.toFloat() / totalSteps }, modifier = Modifier.fillMaxWidth().padding(top = 5.dp), color = Blue)
