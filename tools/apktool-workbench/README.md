@@ -46,7 +46,7 @@ This workbench is for resource engineering, localization, UI/branding experiment
 
 ## Honest capability status
 - Desktop binary resource decode/edit/rebuild: implemented through Apktool.
-- On-device full Apktool resource rebuild: not implemented; Android app links to this Windows companion.
+- On-device Android ARM64 resource decode/rebuild: implemented through the Termux companion script; it rebuilds resources and the manifest, but intentionally does not rebuild DEX code.
 - APK signing: available in OMNI's Android signing workflow; desktop example uses apksigner.
 - Automated install/runtime verification: not part of this script; report marks it NOT TESTED.
 
