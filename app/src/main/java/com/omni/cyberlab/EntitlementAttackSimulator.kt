@@ -53,9 +53,11 @@ object EntitlementAttackSimulator {
             add("pending","Pending purchase unlock","Attempt to fulfill a PENDING transaction.",a,b,a.startsWith("ALLOW"),"Provider state=PENDING.")
         }
         run {
-            val p=Purchase("replay-token","com.omni.demo","coins_100","alice","PURCHASED",true);val strong=DemoBackend(true)
-            strong.grant(p,"alice");val second=strong.grant(p,"alice")
-            add("replay","Purchase-token replay","Submit the same purchase token twice.","ALLOW • vulnerable implementation can double-credit",second,true,"Hardened wallet balance=${strong.coins("alice")} coins; one 100-coin credit expected.")
+            val p=Purchase("replay-token","com.omni.demo","coins_100","alice","PURCHASED",true)
+            val weak=DemoBackend(false);val strong=DemoBackend(true)
+            weak.grant(p,"alice",100);val weakSecond=weak.grant(p,"alice",100)
+            strong.grant(p,"alice");val strongSecond=strong.grant(p,"alice")
+            add("replay","Purchase-token replay","Submit the same purchase token twice.","${weakSecond} • vulnerable balance=${weak.coins("alice")} coins",strongSecond,weak.coins("alice")>100,"Vulnerable demo credits twice (${weak.coins("alice")}); hardened demo balance=${strong.coins("alice")} coins.")
         }
         run {
             val p=Purchase("bound-token","com.omni.demo","vip_monthly","alice","PURCHASED",true)
