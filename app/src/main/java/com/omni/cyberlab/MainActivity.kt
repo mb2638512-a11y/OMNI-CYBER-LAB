@@ -1664,6 +1664,19 @@ private fun Detail(app: AppRow, onBack: () -> Unit) {
             appendLine("Triage classification is heuristic and does not prove exploitability, safety or a vulnerability.")
             appendLine("IMPORTANT: runtime checklist marks and notes are user-entered observations, not independently verified test results.")
             appendLine("IMPORTANT: checked items are user-entered records, not independently verified test results.")
+            val dashboardFindings = runStructuredStaticChecks(app).filter { it.startsWith("[") }
+            val reviewedFindings = runtimePrefs.getStringSet("reviewed_findings_" + app.pkg, emptySet()) ?: emptySet()
+            appendLine()
+            appendLine("SECURITY FINDINGS DASHBOARD SUMMARY")
+            appendLine("Static rule matches: HIGH " + dashboardFindings.count { it.startsWith("[HIGH]") } +
+                " • MEDIUM " + dashboardFindings.count { it.startsWith("[MEDIUM]") } +
+                " • REVIEW " + dashboardFindings.count { it.startsWith("[REVIEW]") } +
+                " • INFO " + dashboardFindings.count { it.startsWith("[INFO]") })
+            dashboardFindings.forEach { finding ->
+                val title = finding.substringAfter("] ").ifBlank { finding }
+                appendLine(finding + " • " + if (reviewedFindings.contains(title)) "MANUALLY REVIEWED" else "AWAITING REVIEW")
+            }
+            appendLine("Review markers are user-managed workflow labels and do not mean an issue is fixed or remediated.")
             if (runtimeEvidence.isNotBlank()) { appendLine(); appendLine("ATTACHED DEVICE DIAGNOSTIC EVIDENCE"); appendLine(runtimeEvidence) }
             if (runtimeLogReport.isNotBlank()) { appendLine(); appendLine("RUNTIME LOG TRIAGE SNAPSHOT"); appendLine(runtimeLogReport) }
             if (shizukuReport.isNotBlank()) { appendLine(); appendLine("SHIZUKU DIAGNOSTIC SNAPSHOT"); appendLine(shizukuReport) }
