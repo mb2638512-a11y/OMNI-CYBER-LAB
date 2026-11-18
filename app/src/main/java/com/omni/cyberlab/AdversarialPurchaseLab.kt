@@ -72,19 +72,19 @@ fun AdversarialPurchaseLab(targetPackage: String, modifier: Modifier = Modifier)
                 }
                 if (exploitResults.isNotEmpty()) {
                     val vulnerableCount = exploitResults.count { it.vulnerable }
-                    Text("LOCAL DEMO RESULTS: \${vulnerableCount} vulnerable control(s) detected across \${exploitResults.size} scenarios • no target app contacted", color = amber, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text("LOCAL DEMO RESULTS: ${vulnerableCount} vulnerable control(s) detected across ${exploitResults.size} scenarios • no target app contacted", color = amber, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                     exploitResults.forEach { result ->
                         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B28))) {
                             Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(result.title, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("ATTACK: \${result.attackerTechnique}", color = muted, fontSize = 9.sp)
-                                Text("VULNERABLE DEMO: \${result.vulnerableOutcome}", color = if (result.vulnerable) Color(0xFFFF6878) else amber, fontSize = 9.sp)
-                                Text("HARDENED CONTROL: \${result.hardenedOutcome}", color = green, fontSize = 9.sp)
-                                Text("EVIDENCE: \${result.evidence}", color = muted, fontSize = 8.sp)
+                                Text("ATTACK: ${result.attackerTechnique}", color = muted, fontSize = 9.sp)
+                                Text("VULNERABLE DEMO: ${result.vulnerableOutcome}", color = if (result.vulnerable) Color(0xFFFF6878) else amber, fontSize = 9.sp)
+                                Text("HARDENED CONTROL: ${result.hardenedOutcome}", color = green, fontSize = 9.sp)
+                                Text("EVIDENCE: ${result.evidence}", color = muted, fontSize = 8.sp)
                             }
                         }
                     }
-                    Text("These are deterministic local model results, not findings against \${targetPackage}. Repeat equivalent cases against your own staging app/backend to establish real evidence.", color = amber, fontSize = 9.sp)
+                    Text("These are deterministic local model results, not findings against ${targetPackage}. Repeat equivalent cases against your own staging app/backend to establish real evidence.", color = amber, fontSize = 9.sp)
                 }
 
                 visible.forEach { (index, test) ->
