@@ -281,8 +281,36 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
             }
             Text("Checkpoints are immutable snapshots of the current local workspace, not separate isolated engagement databases. Latest 20 are retained on this device.", style = MaterialTheme.typography.labelSmall)
         } else Text("No saved engagement checkpoints yet.", style = MaterialTheme.typography.bodySmall)
+        if (engagementHistory.length() >= 2) {
+            val older = engagementHistory.optJSONObject(engagementHistory.length() - 2)
+            val newer = engagementHistory.optJSONObject(engagementHistory.length() - 1)
+            if (older != null && newer != null) {
+                val olderCoverage = older.optInt("coverageCompleted")
+                val newerCoverage = newer.optInt("coverageCompleted")
+                val olderFindings = older.optInt("findingCount")
+                val newerFindings = newer.optInt("findingCount")
+                val olderTitles = (0 until (older.optJSONArray("findings")?.length() ?: 0)).mapNotNull { older.optJSONArray("findings")?.optJSONObject(it)?.optString("title")?.takeIf { title -> title.isNotBlank() } }.toSet()
+                val newTitles = (0 until (newer.optJSONArray("findings")?.length() ?: 0)).mapNotNull { newer.optJSONArray("findings")?.optJSONObject(it)?.optString("title")?.takeIf { title -> title.isNotBlank() } }.toSet()
+                val addedTitles = newTitles - olderTitles
+                val absentTitles = olderTitles - newTitles
+                val recordKeys = listOf("apiAuthorizationRecords", "sessionSecurityRecords", "localDataRecords", "networkSecurityRecords", "billingRecords", "endpointProbeRecords")
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("LATEST CHECKPOINT COMPARISON", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("${older.optString("savedAt")} → ${newer.optString("savedAt")}", style = MaterialTheme.typography.labelSmall)
+                        Text("Coverage: $olderCoverage → $newerCoverage (${if (newerCoverage - olderCoverage >= 0) "+" else ""}${newerCoverage - olderCoverage}) / ${newer.optInt("coverageTotal")}", style = MaterialTheme.typography.bodySmall)
+                        Text("Finding records: $olderFindings → $newerFindings (${if (newerFindings - olderFindings >= 0) "+" else ""}${newerFindings - olderFindings})", style = MaterialTheme.typography.bodySmall)
+                        recordKeys.forEach { key -> Text("$key: ${older.optInt(key)} → ${newer.optInt(key)} (${newer.optInt(key) - older.optInt(key)})", style = MaterialTheme.typography.bodySmall) }
+                        Text("Finding titles newly present: ${addedTitles.size} • no longer present: ${absentTitles.size}", style = MaterialTheme.typography.bodySmall)
+                        addedTitles.take(5).forEach { Text("NEW: $it", style = MaterialTheme.typography.labelSmall) }
+                        absentTitles.take(5).forEach { Text("NOT IN LATEST SNAPSHOT: $it", style = MaterialTheme.typography.labelSmall) }
+                        Text("Comparison uses saved record counts and finding titles only. Missing from a snapshot does not prove a vulnerability was fixed; snapshots may represent different scope or data entry.", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
         Divider()
-        Text("BLIND / BLACK-BOX PENETRATION TEST", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+        Text("BLIND / BLACK-BOX PENETRATION TEST",color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
         Text("Start with only the client-provided app and public-facing information. Keep the test low-noise where agreed, record evidence, and do not assume hidden assets are in scope.", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(target, { target = it; prefs.edit().putString("target", it).apply() }, label = { Text("Target package / app / domain") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(apiHosts, { apiHosts = it; prefs.edit().putString("hosts", it).apply() }, label = { Text("Allowed API hosts (one per line)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
