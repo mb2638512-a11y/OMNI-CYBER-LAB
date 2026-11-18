@@ -35,10 +35,10 @@ jobs:
           body: |
             OMNI CYBER LAB v0.10.0 — Android debug APK.
 
-            Includes installed-app and APK inventory, static security orchestration, owner-authorized APK resource engineering companion workflows, Shizuku read-only diagnostics, adversarial purchase and virtual-economy QA simulations, evidence reports, and expanded automated regression tests.
+            Includes installed-app and APK inventory, static security orchestration, Shizuku read-only diagnostics, 12 adversarial purchase and virtual-economy QA scenarios, evidence reports, strict Play verifier request parsing, and expanded Android regression tests.
 
-            Android resource rebuild is provided by the Termux ARM64 companion and rebuilds resources/manifest only; DEX rebuilding is not included. Live third-party payment, VIP, license or ad bypass is not supported. Backend purchase verification is intended for apps and products owned by the operator.
+            Full on-device Apktool decode/rebuild is available through the Termux ARM64 companion. It decodes DEX into Smali and rebuilds Smali into DEX alongside resources and manifest. Output is unsigned until signed with the owner's keystore. Use only APKs you own or are explicitly authorized to test.
 
-            Build and unit-test status is recorded in GitHub Actions. Physical-device install/runtime validation remains a separate manual test.
+            Live third-party payment, VIP, license or ad bypass is not included. The purchase-security labs support local exploit simulation and authorized staging/test-account validation. Physical-device install/runtime validation remains a separate manual test.
           files: app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
