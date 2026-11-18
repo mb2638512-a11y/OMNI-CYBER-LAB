@@ -2472,7 +2472,13 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
     val completedSteps = (0 until totalSteps).count { savedChecks.getOrNull(it) == '1' }
     val evidence = prefs.getString("evidence_" + app.pkg, "") ?: ""
     val timeline = prefs.getString("timeline_" + app.pkg, "") ?: ""
-    val evidenceCorrelations = remember(findings, evidence, timeline) { securityEvidenceCorrelations(findings, evidence, timeline) }
+    val evidenceCorrelations = remember(findings, evidence, timeline) { securityEvidenceCorrelations(findings, evidence, timeline) }    val orchestratorPrefs = remember(app.pkg) { context.getSharedPreferences("security_test_orchestrator", Context.MODE_PRIVATE) }
+    val regressionHistory = remember(app.pkg) { try { org.json.JSONArray(orchestratorPrefs.getString("history_" + app.pkg, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() } }
+    val historicalMatchCounts = remember(regressionHistory) { (0 until regressionHistory.length()).mapNotNull { index ->
+        val snapshot = regressionHistory.optJSONObject(index) ?: return@mapNotNull null
+        val matches = snapshot.optJSONArray("findings") ?: org.json.JSONArray()
+        matches.length()
+    } }
     val reviewedKey = "reviewed_findings_" + app.pkg
     val reviewed = remember(app.pkg) { mutableStateListOf<String>().apply {
         addAll((prefs.getStringSet(reviewedKey, emptySet()) ?: emptySet()).toList())
@@ -2520,6 +2526,21 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
             }
         }
         Text("Correlation uses text markers only; it does not prove that a finding caused a runtime event.", color = Grey, fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
+        Text("HISTORICAL TEST TREND • ${historicalMatchCounts.size} / 10 snapshots", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
+        if (historicalMatchCounts.isEmpty()) {
+            Text("Run the Security Test Orchestrator to begin a per-app trend history.", color = Grey, fontSize = 9.sp)
+        } else {
+            Row(Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.Bottom) {
+                historicalMatchCounts.takeLast(10).forEachIndexed { index, count ->
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(count.toString(), color = Grey, fontSize = 8.sp)
+                        Box(Modifier.fillMaxWidth().height((count.coerceAtLeast(1) * 5).coerceAtMost(70).dp).background(Blue, RoundedCornerShape(4.dp)))
+                        Text((index + 1).toString(), color = Grey, fontSize = 7.sp)
+                    }
+                }
+            }
+            Text("Counts represent configured rule matches per saved run, not confirmed vulnerabilities or a security score.", color = Grey, fontSize = 8.sp, modifier = Modifier.padding(top = 3.dp))
+        }
         Text("FINDINGS & REVIEW TRACKER", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, modifier = Modifier.padding(top = 14.dp))
         findings.forEach { finding ->
             val title = finding.substringAfter("] ").ifBlank { finding }
@@ -2558,6 +2579,7 @@ private fun SecurityFindingsDashboard(context: Context, app: AppRow) {
                 put("manualTestCoverage", org.json.JSONObject().put("completed", completedSteps).put("total", totalSteps))
                 put("evidenceAttached", evidence.isNotBlank())
                 put("evidenceCorrelations", org.json.JSONArray(evidenceCorrelations))
+                put("historicalRuleMatchCounts", org.json.JSONArray(historicalMatchCounts))
                 put("timelineEvents", if (timeline.isBlank()) org.json.JSONArray() else org.json.JSONArray(timeline.lines()))
                 put("reviewedFindings", org.json.JSONArray(reviewed.toList()))
                 put("remediationTracking", org.json.JSONObject().apply { remediation.forEach { (key, value) -> put(key, value) } })
