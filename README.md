@@ -219,3 +219,5 @@ This repository contains source code. A build is considered successful only when
 
 - The Android app now links to `tools/apktool-workbench/`, a Windows PowerShell companion that downloads official Apktool 3.0.3, verifies the pinned SHA-256, decodes the manifest/resources, provides an editable project folder and rebuilds an unsigned APK.
 - Re-import the rebuilt APK into OMNI for signing and validation. This full decode/rebuild workflow currently runs on Windows with Java 17+; it is not an on-device APKTool runtime. The existing Android text-entry patcher remains available for bounded `assets/` and `res/raw/` edits.
+
+- **Server-side game wallet:** `/v1/wallet/fulfill` credits a configured COINS/GOLD grant only from a verified one-time purchase token; `/v1/wallet/spend` performs atomic, idempotent debits and rejects insufficient balances. PostgreSQL stores wallet balances and an append-only transaction ledger. Configure each product grant server-side in `wallet_product_grants`; no client can request an arbitrary credit.
