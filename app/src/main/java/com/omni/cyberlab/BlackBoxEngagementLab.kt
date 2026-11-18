@@ -587,6 +587,23 @@ fun BlackBoxEngagementLab(context: Context, packageName: String, modifier: Modif
                 val hsts = observedHeaders?.optString("Strict-Transport-Security").orEmpty()
                 val csp = observedHeaders?.optString("Content-Security-Policy").orEmpty()
                 val xcto = observedHeaders?.optString("X-Content-Type-Options").orEmpty()
+                val corsOrigin = observedHeaders?.optString("Access-Control-Allow-Origin").orEmpty()
+                val corsCredentials = observedHeaders?.optString("Access-Control-Allow-Credentials").orEmpty()
+                val cookieFlags = observedHeaders?.keys()?.asSequence()?.filter { it.startsWith("Set-Cookie-Flags-") }?.toList().orEmpty()
+                Text("CORS REVIEW • " + when {
+                    corsOrigin == "*" && corsCredentials.equals("true", true) -> "Wildcard origin with credentials advertised — investigate"
+                    corsOrigin == "*" -> "Wildcard origin advertised — verify endpoint data sensitivity"
+                    corsOrigin.isBlank() -> "No ACAO header observed"
+                    else -> "Origin policy advertised: " + corsOrigin.take(120)
+                }, color = if (corsOrigin == "*" && corsCredentials.equals("true", true)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                if (cookieFlags.isEmpty()) {
+                    Text("SESSION COOKIES • No Set-Cookie header observed in this response", style = MaterialTheme.typography.labelSmall)
+                } else {
+                    cookieFlags.forEach { key ->
+                        val flags = observedHeaders?.optString(key).orEmpty()
+                        Text("COOKIE ATTRIBUTES • " + flags, color = if (flags.contains("NO_SECURITY_FLAGS")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 val hstsAge = Regex("max-age\\s*=\\s*(\\d+)", RegexOption.IGNORE_CASE).find(hsts)?.groupValues?.getOrNull(1)?.toLongOrNull()
                 Text("PASSIVE HEADER REVIEW", style = MaterialTheme.typography.labelLarge)
                 val headerReviews = buildList {
